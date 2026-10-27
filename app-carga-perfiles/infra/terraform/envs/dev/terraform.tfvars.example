@@ -1,0 +1,22 @@
+# Copiar a terraform.tfvars y completar. No contiene secretos (OIDC con PKCE no usa client secret).
+app = {
+  # Entra ID: app registration tipo SPA, redirect URI = output redirect_uri.
+  # En el manifest de la API: "accessTokenAcceptedVersion": 2 para que el issuer sea el v2.0.
+  oidc_issuer    = "https://login.microsoftonline.com/<tenant-id>/v2.0"
+  oidc_client_id = "<client-id-spa>"
+  oidc_audiences = ["<client-id-api>"]
+  oidc_scope     = "openid profile email api://<client-id-api>/Cargas.Write"
+
+  # Object IDs de grupos de Entra ID (claim "groups").
+  grupos_carga = ["<grupo-servicio-al-socio>"]
+  grupos_admin = ["<grupo-administradores>"]
+
+  connect_instance_alias = "<alias-instancia>"
+  connect_instance_arn   = "arn:aws:connect:us-east-1:<cuenta>:instance/<instance-id>"
+
+  # Dominio que creo Connect al habilitar Customer Profiles (amazon-connect-<alias>), o uno nuevo.
+  crear_dominio_perfiles = false
+  dominio_perfiles       = "amazon-connect-<alias-instancia>"
+
+  concurrencia_escritura = 5
+}
