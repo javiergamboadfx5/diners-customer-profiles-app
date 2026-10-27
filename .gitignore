@@ -29,3 +29,6 @@ coverage/
 Thumbs.db
 desktop.ini
 *.swp
+
+# Kiro workspace config
+.kiro/
