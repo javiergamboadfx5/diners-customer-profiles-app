@@ -11,7 +11,9 @@ import Select from "@cloudscape-design/components/select";
 import SpaceBetween from "@cloudscape-design/components/space-between";
 import StatusIndicator from "@cloudscape-design/components/status-indicator";
 import Table from "@cloudscape-design/components/table";
+import { formatearNumero } from "../mock";
 import { FaseCarga, ResultadoCarga } from "../useCargaSimulada";
+import Resultado from "./Resultado";
 import {
   CAMPOS_DESTINO,
   COLUMNAS_SOCIO,
@@ -24,8 +26,11 @@ interface Props {
   fase: FaseCarga;
   progreso: number;
   archivo: File[];
+  nombreArchivo?: string;
   resultado?: ResultadoCarga;
   enCurso: boolean;
+  ocupado?: boolean;
+  soloCsv?: boolean;
   onArchivo: (archivos: File[]) => void;
   onIniciar: () => void;
   onConfirmar: () => void;
@@ -37,8 +42,11 @@ export default function NuevaCarga({
   fase,
   progreso,
   archivo,
+  nombreArchivo,
   resultado,
   enCurso,
+  ocupado = false,
+  soloCsv = false,
   onArchivo,
   onIniciar,
   onConfirmar,
@@ -46,6 +54,19 @@ export default function NuevaCarga({
   onNuevaCarga
 }: Props) {
   const bloqueado = fase !== "inicial";
+  const nombre = nombreArchivo ?? archivo[0]?.name;
+  const n = (valor?: number) => formatearNumero(valor ?? 0);
+  const final = resultado?.estado;
+  const alertaFinal =
+    final === "completada"
+      ? { type: "success" as const, header: "Carga completada" }
+      : final === "parcial"
+        ? { type: "warning" as const, header: "Carga completada con errores de escritura" }
+        : final === "rechazada"
+          ? { type: "error" as const, header: "El archivo fue rechazado" }
+          : final === "cancelada"
+            ? { type: "info" as const, header: "Carga cancelada" }
+            : { type: "error" as const, header: "La carga falló" };
   const [mapeo, setMapeo] = useState<MapeoDetectado[]>([]);
   const [analizando, setAnalizando] = useState(false);
   const opcionesDestino = useMemo(
@@ -119,13 +140,13 @@ export default function NuevaCarga({
       <SpaceBetween size="m">
         {bloqueado && fase !== "listo" ? (
           <Box>
-            Archivo seleccionado: <strong>{archivo[0]?.name}</strong>
+            Archivo seleccionado: <strong>{nombre}</strong>
           </Box>
         ) : fase === "inicial" ? (
           <FileUpload
             value={archivo}
             onChange={({ detail }) => onArchivo(detail.value)}
-            accept=".csv,.xlsx"
+            accept={soloCsv ? ".csv" : ".csv,.xlsx"}
             i18nStrings={{
               uploadButtonText: (multiple) => (multiple ? "Seleccionar archivos" : "Seleccionar archivo"),
               dropzoneText: (multiple) => (multiple ? "Arrastra archivos aquí" : "Arrastra el archivo aquí"),
@@ -136,7 +157,11 @@ export default function NuevaCarga({
             }}
             showFileLastModified
             showFileSize
-            constraintText="Formatos admitidos: .csv y .xlsx. Tamaño máximo: 100 MB."
+            constraintText={
+              soloCsv
+                ? "Formato admitido: .csv (UTF-8, separado por coma o punto y coma). Tamaño máximo: 100 MB."
+                : "Formatos admitidos: .csv y .xlsx. Tamaño máximo: 100 MB."
+            }
           />
         ) : null}
         {archivo.length > 0 && !bloqueado && (
@@ -247,37 +272,54 @@ export default function NuevaCarga({
         {fase === "confirmacion" && (
           <SpaceBetween size="m">
             <Alert type="warning" header="Revisa el impacto antes de escribir">
-              La validación encontró 391 filas rechazadas y 11.492 advertencias. Todavía no se ha escrito ningún perfil.
+              La validación encontró {n(resultado?.filasRechazadas)} filas rechazadas y {n(resultado?.advertencias)}{" "}
+              advertencias. Todavía no se ha escrito ningún perfil.
             </Alert>
             <KeyValuePairs
               columns={4}
               items={[
-                { label: "Archivo", value: archivo[0]?.name ?? "—" },
+                { label: "Archivo", value: nombre ?? "—" },
                 { label: "Esquema", value: `${esquema.name} · v${esquema.version}` },
-                { label: "Perfiles por escribir", value: "176.474" },
-                { label: "Filas rechazadas", value: "391" }
+                { label: "Perfiles por escribir", value: n(resultado?.filasValidas) },
+                { label: "Filas rechazadas", value: n(resultado?.filasRechazadas) }
               ]}
             />
+            {resultado && resultado.hallazgos.length > 0 && <Resultado resultado={resultado} soloReporte />}
           </SpaceBetween>
         )}
         {fase === "listo" && resultado && (
-          <Alert type="success" header="Carga completada">
-            <strong>{archivo[0]?.name ?? "El archivo"}</strong> terminó de procesarse. Consulta el resultado detallado a
-            continuación.
+          <Alert type={alertaFinal.type} header={alertaFinal.header}>
+            {resultado.mensaje ? (
+              resultado.mensaje
+            ) : (
+              <>
+                <strong>{nombre ?? "El archivo"}</strong> terminó de procesarse. Consulta el resultado detallado a
+                continuación.
+              </>
+            )}
           </Alert>
         )}
         <SpaceBetween direction="horizontal" size="xs">
           {fase === "inicial" && (
-            <Button variant="primary" disabled={!archivo.length || analizando || noResueltos > 0} onClick={onIniciar}>
+            <Button
+              variant="primary"
+              loading={ocupado}
+              disabled={!archivo.length || analizando || noResueltos > 0}
+              onClick={onIniciar}
+            >
               Validar archivo
             </Button>
           )}
           {fase === "confirmacion" && (
-            <Button variant="primary" onClick={onConfirmar}>
+            <Button variant="primary" loading={ocupado} disabled={!resultado?.filasValidas} onClick={onConfirmar}>
               Confirmar y escribir perfiles
             </Button>
           )}
-          {(enCurso || fase === "confirmacion") && <Button onClick={onCancelar}>Cancelar carga</Button>}
+          {(enCurso || fase === "confirmacion") && (
+            <Button disabled={ocupado} onClick={onCancelar}>
+              Cancelar carga
+            </Button>
+          )}
           {fase === "listo" && (
             <Button variant="primary" onClick={onNuevaCarga}>
               Cargar otro archivo

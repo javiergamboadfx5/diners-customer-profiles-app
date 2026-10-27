@@ -5,7 +5,7 @@ export const TOTAL_PERFILES_ACTUALES = 176865;
 export const DOMINIO_PERFILES = "diners-peru-prod";
 export const INSTANCIA_CONNECT = "diners-peru.my.connect.aws";
 
-export type EstadoCarga = "en_curso" | "completada" | "parcial" | "rechazada" | "fallida";
+export type EstadoCarga = "en_curso" | "completada" | "parcial" | "rechazada" | "fallida" | "cancelada";
 
 export type TipoHallazgo = "rechazo" | "advertencia";
 

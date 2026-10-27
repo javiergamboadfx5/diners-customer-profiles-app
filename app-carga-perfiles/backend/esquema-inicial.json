@@ -1,0 +1,21 @@
+{
+  "id": "diners-socios",
+  "name": "Perfil de socio Diners",
+  "version": 1,
+  "description": "Perfil maestro de socios para identificación y personalización de la atención.",
+  "allowProfileCreation": true,
+  "updatedAt": "2026-10-27T00:00:00Z",
+  "updatedBy": "terraform",
+  "fields": [
+    { "sourceColumn": "DNI", "destinationId": "account-number", "contentType": "STRING", "required": true, "identifier": "PROFILE_UNIQUE", "validation": "8 dígitos; obligatorio y único" },
+    { "sourceColumn": "NOMBRE_SOCIO", "destinationId": "first-name", "contentType": "STRING", "required": true, "identifier": "NONE", "validation": "Texto; obligatorio" },
+    { "sourceColumn": "TELEFONO_1", "destinationId": "mobile-phone", "contentType": "PHONE_NUMBER", "required": false, "identifier": "NONE", "validation": "11 dígitos con prefijo 51; vacío genera advertencia" },
+    { "sourceColumn": "correo", "destinationId": "personal-email", "contentType": "EMAIL_ADDRESS", "required": true, "identifier": "NONE", "validation": "Dirección de correo válida" },
+    { "sourceColumn": "SEGMENTO_VALOR", "destinationId": "segmento-valor", "contentType": "STRING", "required": false, "identifier": "NONE", "validation": "1, 2 o 3; vacío genera advertencia" },
+    { "sourceColumn": "MARCA_RETENER", "destinationId": "marca-retener", "contentType": "STRING", "required": true, "identifier": "NONE", "validation": "1 o 2; obligatorio" },
+    { "sourceColumn": "tiene_oferta", "destinationId": "tiene-oferta", "contentType": "STRING", "required": true, "identifier": "NONE", "validation": "S o N; obligatorio" },
+    { "sourceColumn": "tea", "destinationId": "tea", "contentType": "NUMBER", "required": false, "identifier": "NONE", "validation": "Decimal entre 0 y 200" },
+    { "sourceColumn": "fecha_afiliacion", "destinationId": "fecha-afiliacion", "contentType": "STRING", "required": true, "identifier": "NONE", "validation": "AAAA-MM-DD; no puede ser futura" },
+    { "sourceColumn": "tipo_producto", "destinationId": "tipo-producto", "contentType": "STRING", "required": true, "identifier": "NONE", "validation": "Producto permitido por el esquema" }
+  ]
+}

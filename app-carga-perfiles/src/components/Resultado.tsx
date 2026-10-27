@@ -12,7 +12,15 @@ import TextFilter from "@cloudscape-design/components/text-filter";
 import { formatearNumero, Hallazgo } from "../mock";
 import { ResultadoCarga } from "../useCargaSimulada";
 const POR_PAGINA = 20;
-export default function Resultado({ resultado }: { resultado: ResultadoCarga }) {
+interface Props {
+  resultado: ResultadoCarga;
+  /** Solo la tabla de hallazgos (paso de confirmacion). */
+  soloReporte?: boolean;
+  onDescargar?: (cargaId: string) => void;
+}
+export default function Resultado({ resultado, soloReporte = false, onDescargar }: Props) {
+  const total = resultado.totalHallazgos ?? resultado.hallazgos.length;
+  const truncado = total > resultado.hallazgos.length;
   const [filtro, setFiltro] = useState("");
   const [pagina, setPagina] = useState(1);
   const filtrados = useMemo(() => {
@@ -28,40 +36,54 @@ export default function Resultado({ resultado }: { resultado: ResultadoCarga }) 
   const visibles = filtrados.slice((pagina1 - 1) * POR_PAGINA, pagina1 * POR_PAGINA);
   return (
     <SpaceBetween size="l">
-      <Container header={<Header variant="h2">Resultado de la carga</Header>}>
-        <KeyValuePairs
-          columns={4}
-          items={[
-            {
-              label: "Filas procesadas",
-              value: formatearNumero(resultado.filasProcesadas)
-            },
-            {
-              label: "Perfiles escritos",
-              value: formatearNumero(resultado.filasEscritas)
-            },
-            {
-              label: "Filas rechazadas",
-              value: formatearNumero(resultado.filasRechazadas)
-            },
-            {
-              label: "Advertencias",
-              value: formatearNumero(resultado.advertencias)
-            }
-          ]}
-        />
-      </Container>
+      {!soloReporte && (
+        <Container header={<Header variant="h2">Resultado de la carga</Header>}>
+          <KeyValuePairs
+            columns={4}
+            items={[
+              {
+                label: "Filas procesadas",
+                value: formatearNumero(resultado.filasProcesadas)
+              },
+              {
+                label: "Perfiles escritos",
+                value: formatearNumero(resultado.filasEscritas)
+              },
+              {
+                label: "Filas rechazadas",
+                value: formatearNumero(resultado.filasRechazadas)
+              },
+              {
+                label: "Advertencias",
+                value: formatearNumero(resultado.advertencias)
+              }
+            ]}
+          />
+        </Container>
+      )}
       <Table<Hallazgo>
         items={visibles}
-        variant="container"
+        variant={soloReporte ? "embedded" : "container"}
         wrapLines
         trackBy="id"
         header={
           <Header
             variant="h2"
-            counter={`(${formatearNumero(filtrados.length)})`}
-            description="Una entrada por fila rechazada y por advertencia, con el número de línea del archivo."
-            actions={<Button iconName="download">Descargar reporte CSV</Button>}
+            counter={`(${formatearNumero(filtro ? filtrados.length : total)})`}
+            description={
+              truncado
+                ? `Se muestran los primeros ${formatearNumero(resultado.hallazgos.length)}. El CSV trae los ${formatearNumero(total)}.`
+                : "Una entrada por fila rechazada y por advertencia, con el número de línea del archivo."
+            }
+            actions={
+              <Button
+                iconName="download"
+                disabled={!onDescargar || !resultado.id}
+                onClick={() => resultado.id && onDescargar?.(resultado.id)}
+              >
+                Descargar reporte CSV
+              </Button>
+            }
           >
             Reporte de rechazos y advertencias
           </Header>

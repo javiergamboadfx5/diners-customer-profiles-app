@@ -6,7 +6,7 @@ import StatusIndicator from "@cloudscape-design/components/status-indicator";
 import SpaceBetween from "@cloudscape-design/components/space-between";
 import { Carga, DOMINIO_PERFILES, formatearFecha, formatearNumero, TOTAL_PERFILES_ACTUALES } from "../mock";
 interface Props {
-  ultimaCarga: Carga;
+  ultimaCarga?: Carga;
   totalPerfiles: number;
 }
 export default function EstadoBase({ ultimaCarga, totalPerfiles }: Props) {
@@ -26,24 +26,26 @@ export default function EstadoBase({ ultimaCarga, totalPerfiles }: Props) {
           columns={4}
           items={[
             {
-              label: "Perfiles en Customer Profiles",
+              label: "Perfiles escritos en la última carga",
               value: formatearNumero(totalPerfiles),
               info: totalPerfiles !== TOTAL_PERFILES_ACTUALES ? "Actualizado por la última carga" : undefined
             },
             {
               label: "Última carga",
-              value: formatearFecha(ultimaCarga.fecha)
+              value: ultimaCarga ? formatearFecha(ultimaCarga.fecha) : "Sin cargas"
             },
             {
               label: "Ejecutada por",
-              value: ultimaCarga.usuario
+              value: ultimaCarga?.usuario ?? "—"
             },
             {
               label: "Resultado",
-              value: (
+              value: ultimaCarga ? (
                 <StatusIndicator type={ultimaCarga.estado === "completada" ? "success" : "warning"}>
                   {ultimaCarga.estado === "completada" ? "Completada" : "Parcial"}
                 </StatusIndicator>
+              ) : (
+                "—"
               )
             }
           ]}
@@ -58,7 +60,7 @@ export default function EstadoBase({ ultimaCarga, totalPerfiles }: Props) {
                 label: "Resolución de identidad",
                 value: <StatusIndicator type="stopped">Desactivada</StatusIndicator>
               },
-              { label: "Caducidad del perfil", value: "366 días sin actualizarse" }
+              { label: "Caducidad del perfil", value: "1000 días sin actualizarse" }
             ]}
           />
         </ExpandableSection>
