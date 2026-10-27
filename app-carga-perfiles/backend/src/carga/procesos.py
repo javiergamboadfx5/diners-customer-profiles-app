@@ -25,7 +25,7 @@ def validador(evento, _contexto):
     for registro in evento.get("Records", []):
         clave = urllib.parse.unquote_plus(registro["s3"]["object"]["key"])
         partes = clave.split("/")
-        if len(partes) != 3 or partes[0] != "cargas" or partes[2] != "original.csv":
+        if len(partes) != 3 or partes[0] != "cargas" or partes[2] not in ("original.csv", "original.xlsx"):
             continue
         _validar_carga(partes[1], clave)
 
@@ -39,7 +39,7 @@ def _validar_carga(carga_id: str, clave: str) -> None:
     try:
         esquema = comun.esquema_actual()
         contenido = comun.s3.get_object(Bucket=comun.BUCKET, Key=clave)["Body"].read()
-        res = reglas.validar_csv(reglas.decodificar(contenido), esquema)
+        res = reglas.validar_archivo(clave, contenido, esquema)
         base = comun.prefijo(carga_id)
 
         _poner(f"{base}/reporte.csv", reglas.hallazgos_a_csv(res.hallazgos), "text/csv; charset=utf-8")
@@ -121,6 +121,7 @@ def _escribir_mensaje(mensaje: dict, estados: dict[str, str]) -> None:
         return  # cancelada o terminada: se descarta sin escribir
 
     ok = malas = 0
+    ultimo_error = ""
     for fila in mensaje["filas"]:
         try:
             comun.profiles.put_profile_object(
@@ -131,24 +132,51 @@ def _escribir_mensaje(mensaje: dict, estados: dict[str, str]) -> None:
             codigo = e.response.get("Error", {}).get("Code", "")
             if codigo in ERRORES_REINTENTABLES:
                 raise  # el mensaje completo vuelve a la cola; PutProfileObject es idempotente por DNI
-            log.warning("fila DNI %s rechazada por Customer Profiles: %s", fila.get("account_number"), codigo)
+            log.warning("fila DNI %s rechazada por Customer Profiles: %s %s", fila.get("account_number"), codigo,
+                        e.response.get("Error", {}).get("Message", ""))
+            ultimo_error = codigo or "Desconocido"
             malas += 1
 
     # Contadores una sola vez por mensaje, despues de procesarlo entero.
+    expresion = "ADD filasEscritas :ok, fallidasEscritura :m"
+    valores: dict = {":ok": ok, ":m": malas}
+    if ultimo_error:
+        expresion += " SET errorEscritura = :e"
+        valores[":e"] = ultimo_error
     r = comun.TABLA.update_item(
         Key=comun.clave_carga(carga_id),
-        UpdateExpression="ADD filasEscritas :ok, fallidasEscritura :m",
-        ExpressionAttributeValues={":ok": ok, ":m": malas},
+        UpdateExpression=expresion,
+        ExpressionAttributeValues=valores,
         ReturnValues="ALL_NEW",
     )["Attributes"]
     if int(r["filasEscritas"]) + int(r["fallidasEscritura"]) >= int(r["filasValidas"]):
-        _finalizar(carga_id, int(r["filasEscritas"]), int(r["fallidasEscritura"]))
+        _finalizar(carga_id, int(r["filasEscritas"]), int(r["fallidasEscritura"]), r.get("errorEscritura", ""))
 
 
-def _finalizar(carga_id: str, escritas: int, fallidas: int) -> None:
+def explicar_error_escritura(codigo: str, fallidas: int, escritas: int) -> str:
+    """Mensaje para el usuario: que paso, a cuantos perfiles afecto y que hacer."""
+    alcance = (f"No se escribió ninguno de los {fallidas:,} perfiles válidos." if escritas == 0
+               else f"Se escribieron {escritas:,} perfiles; {fallidas:,} no se pudieron escribir.").replace(",", ".")
+    causas = {
+        "AccessDeniedException": "la aplicación no tiene permiso para escribir en Customer Profiles. "
+                                 "Un administrador debe revisar el rol de la aplicación y las políticas de la cuenta de AWS.",
+        "ResourceNotFoundException": "no existe el dominio o el tipo de objeto de Customer Profiles configurado. "
+                                     "Un administrador debe revisar la configuración del despliegue.",
+        "BadRequestException": "Customer Profiles rechazó los datos por formato. "
+                               "Contacta al administrador con el código de carga.",
+        "ValidationException": "Customer Profiles rechazó los datos por formato. "
+                               "Contacta al administrador con el código de carga.",
+    }
+    causa = causas.get(codigo, f"Customer Profiles respondió con el error {codigo}. Contacta al administrador.")
+    return f"{alcance} Motivo: {causa} El archivo validado no se modificó; puedes volver a cargarlo cuando se resuelva."
+
+
+def _finalizar(carga_id: str, escritas: int, fallidas: int, codigo_error: str = "") -> None:
     estado = "completada" if fallidas == 0 else ("fallida" if escritas == 0 else "parcial")
+    extra = {"error": explicar_error_escritura(codigo_error, fallidas, escritas)} if fallidas else {}
     try:
-        comun.actualizar_carga(carga_id, condicion_estado="escribiendo", estado=estado, finalizadaEn=comun.ahora())
+        comun.actualizar_carga(carga_id, condicion_estado="escribiendo", estado=estado, finalizadaEn=comun.ahora(),
+                               **extra)
     except comun.TABLA.meta.client.exceptions.ConditionalCheckFailedException:
         return
     comun.liberar_lock(carga_id)

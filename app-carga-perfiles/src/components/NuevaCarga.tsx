@@ -30,7 +30,6 @@ interface Props {
   resultado?: ResultadoCarga;
   enCurso: boolean;
   ocupado?: boolean;
-  soloCsv?: boolean;
   onArchivo: (archivos: File[]) => void;
   onIniciar: () => void;
   onConfirmar: () => void;
@@ -46,7 +45,6 @@ export default function NuevaCarga({
   resultado,
   enCurso,
   ocupado = false,
-  soloCsv = false,
   onArchivo,
   onIniciar,
   onConfirmar,
@@ -66,7 +64,18 @@ export default function NuevaCarga({
           ? { type: "error" as const, header: "El archivo fue rechazado" }
           : final === "cancelada"
             ? { type: "info" as const, header: "Carga cancelada" }
-            : { type: "error" as const, header: "La carga falló" };
+            : { type: "error" as const, header: "La carga falló: no se escribió ningún perfil" };
+  // Texto de respaldo si el backend no envió el motivo (cargas antiguas o errores no clasificados).
+  const detalleFinal =
+    final === "completada"
+      ? `Se escribieron ${n(resultado?.filasEscritas)} perfiles. Consulta el resultado detallado a continuación.`
+      : final === "parcial"
+        ? `Se escribieron ${n(resultado?.filasEscritas)} de ${n(resultado?.filasValidas)} perfiles válidos. Descarga el reporte para ver el detalle.`
+        : final === "rechazada"
+          ? "Ninguna fila pasó la validación. Revisa el reporte de rechazos."
+          : final === "cancelada"
+            ? `La carga se detuvo. Se escribieron ${n(resultado?.filasEscritas)} perfiles antes de cancelar; no se deshacen.`
+            : `No se escribió ninguno de los ${n(resultado?.filasValidas)} perfiles válidos. Contacta al administrador con el código de carga ${resultado?.id ?? ""}.`;
   const [mapeo, setMapeo] = useState<MapeoDetectado[]>([]);
   const [analizando, setAnalizando] = useState(false);
   const opcionesDestino = useMemo(
@@ -146,7 +155,7 @@ export default function NuevaCarga({
           <FileUpload
             value={archivo}
             onChange={({ detail }) => onArchivo(detail.value)}
-            accept={soloCsv ? ".csv" : ".csv,.xlsx"}
+            accept=".csv,.xlsx"
             i18nStrings={{
               uploadButtonText: (multiple) => (multiple ? "Seleccionar archivos" : "Seleccionar archivo"),
               dropzoneText: (multiple) => (multiple ? "Arrastra archivos aquí" : "Arrastra el archivo aquí"),
@@ -157,11 +166,7 @@ export default function NuevaCarga({
             }}
             showFileLastModified
             showFileSize
-            constraintText={
-              soloCsv
-                ? "Formato admitido: .csv (UTF-8, separado por coma o punto y coma). Tamaño máximo: 100 MB."
-                : "Formatos admitidos: .csv y .xlsx. Tamaño máximo: 100 MB."
-            }
+            constraintText="Formatos admitidos: Excel (.xlsx, primera hoja) o CSV (UTF-8, separado por coma o punto y coma). Tamaño máximo: 100 MB."
           />
         ) : null}
         {archivo.length > 0 && !bloqueado && (
@@ -215,6 +220,7 @@ export default function NuevaCarga({
                           .find((opcion) => opcion.value === e.destinationId) ?? null;
                       return (
                         <Select
+                          expandToViewport
                           selectedOption={seleccionada}
                           onChange={({ detail }) =>
                             actualizarDestino(e.sourceColumn, detail.selectedOption.value ?? null)
@@ -289,14 +295,13 @@ export default function NuevaCarga({
         )}
         {fase === "listo" && resultado && (
           <Alert type={alertaFinal.type} header={alertaFinal.header}>
-            {resultado.mensaje ? (
-              resultado.mensaje
-            ) : (
-              <>
-                <strong>{nombre ?? "El archivo"}</strong> terminó de procesarse. Consulta el resultado detallado a
-                continuación.
-              </>
-            )}
+            <SpaceBetween size="xxs">
+              <span>
+                <strong>{nombre ?? "El archivo"}</strong>
+                {resultado.id ? ` · ${resultado.id}` : ""}
+              </span>
+              <span>{resultado.mensaje || detalleFinal}</span>
+            </SpaceBetween>
           </Alert>
         )}
         <SpaceBetween direction="horizontal" size="xs">

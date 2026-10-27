@@ -17,10 +17,10 @@ locals {
     BUCKET_CARGAS     = aws_s3_bucket.cargas.id
     COLA_ESCRITURA    = aws_sqs_queue.escritura.url
     DOMINIO_PERFILES  = local.dominio
-    OBJECT_TYPE       = awscc_customerprofiles_object_type.socio.object_type_name
+    OBJECT_TYPE       = var.object_type_name
     FUNCION_ENCOLADOR = "${local.prefijo}-encolador"
-    GRUPOS_CARGA      = join(",", var.grupos_carga)
-    GRUPOS_ADMIN      = join(",", var.grupos_admin)
+    GRUPOS_CARGA      = join(",", local.grupos_carga)
+    GRUPOS_ADMIN      = join(",", local.grupos_admin)
   }
 }
 

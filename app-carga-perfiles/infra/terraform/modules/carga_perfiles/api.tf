@@ -11,8 +11,8 @@ resource "aws_apigatewayv2_authorizer" "jwt" {
   authorizer_type  = "JWT"
   identity_sources = ["$request.header.Authorization"]
   jwt_configuration {
-    issuer   = var.oidc_issuer
-    audience = var.oidc_audiences
+    issuer   = local.oidc_issuer
+    audience = local.oidc_audiences
   }
 }
 

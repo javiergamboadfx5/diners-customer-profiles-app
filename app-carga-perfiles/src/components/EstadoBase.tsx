@@ -8,8 +8,9 @@ import { Carga, DOMINIO_PERFILES, formatearFecha, formatearNumero, TOTAL_PERFILE
 interface Props {
   ultimaCarga?: Carga;
   totalPerfiles: number;
+  dominio?: { nombre: string; diasExpiracion: number };
 }
-export default function EstadoBase({ ultimaCarga, totalPerfiles }: Props) {
+export default function EstadoBase({ ultimaCarga, totalPerfiles, dominio }: Props) {
   return (
     <Container
       header={
@@ -54,13 +55,16 @@ export default function EstadoBase({ ultimaCarga, totalPerfiles }: Props) {
           <KeyValuePairs
             columns={4}
             items={[
-              { label: "Dominio", value: DOMINIO_PERFILES },
-              { label: "Clave de búsqueda", value: "DNI → AccountNumber" },
+              { label: "Dominio", value: dominio?.nombre ?? DOMINIO_PERFILES },
+              { label: "Claves de búsqueda", value: "DNI → AccountNumber · Teléfono → MobilePhoneNumber" },
               {
                 label: "Resolución de identidad",
                 value: <StatusIndicator type="stopped">Desactivada</StatusIndicator>
               },
-              { label: "Caducidad del perfil", value: "1000 días sin actualizarse" }
+              {
+                label: "Caducidad del perfil",
+                value: `${formatearNumero(dominio?.diasExpiracion ?? 1000)} días sin actualizarse`
+              }
             ]}
           />
         </ExpandableSection>

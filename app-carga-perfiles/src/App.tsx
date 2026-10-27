@@ -9,12 +9,21 @@ import Historial from "./components/Historial";
 import MapeoPerfiles from "./components/MapeoPerfiles";
 import NuevaCarga from "./components/NuevaCarga";
 import Resultado from "./components/Resultado";
+import { UsuarioConnect } from "./components/AccesoConnect";
 import type { ConfigApp } from "./config";
+import type { ContextoConnect } from "./connect";
 import { INSTANCIA_CONNECT } from "./mock";
 import { useCargaApi } from "./useCargaApi";
 import { ControladorCarga, useCargaSimulada } from "./useCargaSimulada";
 
-function Vista({ carga, instancia }: { carga: ControladorCarga; instancia: string }) {
+interface PropsVista {
+  carga: ControladorCarga;
+  instancia: string;
+  connect: ContextoConnect | null;
+  dominio?: { nombre: string; diasExpiracion: number };
+}
+
+function Vista({ carga, instancia, connect, dominio }: PropsVista) {
   const ultimaCarga = carga.historial.find((c) => c.estado === "completada" || c.estado === "parcial");
   const totalPerfiles = ultimaCarga?.filasEscritas ?? 0;
   return (
@@ -33,6 +42,7 @@ function Vista({ carga, instancia }: { carga: ControladorCarga; instancia: strin
               >
                 Carga de perfiles
               </Header>
+              {connect && <UsuarioConnect contexto={connect} />}
               {carga.modo === "mock" && (
                 <Alert type="info" header="Entorno de demostración">
                   Este prototipo no escribe en Customer Profiles. Los resultados reproducen la base recibida el 20 de
@@ -48,7 +58,7 @@ function Vista({ carga, instancia }: { carga: ControladorCarga; instancia: strin
           }
         >
           <SpaceBetween size="l">
-            <EstadoBase ultimaCarga={ultimaCarga} totalPerfiles={totalPerfiles} />
+            <EstadoBase ultimaCarga={ultimaCarga} totalPerfiles={totalPerfiles} dominio={dominio} />
             <NuevaCarga
               esquema={carga.esquema}
               fase={carga.fase}
@@ -58,7 +68,6 @@ function Vista({ carga, instancia }: { carga: ControladorCarga; instancia: strin
               resultado={carga.resultado}
               enCurso={carga.enCurso}
               ocupado={carga.ocupado}
-              soloCsv={carga.modo === "api"}
               onArchivo={carga.setArchivo}
               onIniciar={carga.iniciar}
               onConfirmar={carga.confirmarEscritura}
@@ -80,14 +89,26 @@ function Vista({ carga, instancia }: { carga: ControladorCarga; instancia: strin
   );
 }
 
-function AppMock() {
-  return <Vista carga={useCargaSimulada()} instancia={INSTANCIA_CONNECT} />;
+function AppMock({ connect }: { connect: ContextoConnect | null }) {
+  return <Vista carga={useCargaSimulada()} instancia={INSTANCIA_CONNECT} connect={connect} />;
 }
 
-function AppApi({ instancia }: { instancia: string }) {
-  return <Vista carga={useCargaApi()} instancia={instancia} />;
+function AppApi({
+  instancia,
+  connect,
+  dominio
+}: {
+  instancia: string;
+  connect: ContextoConnect | null;
+  dominio?: { nombre: string; diasExpiracion: number };
+}) {
+  return <Vista carga={useCargaApi()} instancia={instancia} connect={connect} dominio={dominio} />;
 }
 
-export default function App({ config }: { config: ConfigApp }) {
-  return config.modo === "api" ? <AppApi instancia={config.instancia} /> : <AppMock />;
+export default function App({ config, connect }: { config: ConfigApp; connect: ContextoConnect | null }) {
+  return config.modo === "api" ? (
+    <AppApi instancia={config.instancia} connect={connect} dominio={config.dominio} />
+  ) : (
+    <AppMock connect={connect} />
+  );
 }

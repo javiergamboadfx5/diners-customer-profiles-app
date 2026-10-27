@@ -21,5 +21,10 @@ output "dominio_perfiles" {
 }
 
 output "object_type" {
-  value = awscc_customerprofiles_object_type.socio.object_type_name
+  value = var.habilitar_customer_profiles ? var.object_type_name : "(deshabilitado)"
+}
+
+output "cognito_user_pool_id" {
+  description = "User pool de pruebas (vacio si se usa Entra ID). Los usuarios se crean por CLI."
+  value       = var.crear_cognito_pruebas ? aws_cognito_user_pool.pruebas[0].id : ""
 }

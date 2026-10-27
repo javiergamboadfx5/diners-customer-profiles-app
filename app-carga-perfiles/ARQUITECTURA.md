@@ -109,13 +109,24 @@ Ubicación: `src/`. React 18, Cloudscape, Vite.
 | `main.tsx` | Lee `/config.json`, inicializa API y OIDC, procesa el retorno del popup de login |
 | `config.ts` | Sin `config.json` (desarrollo local) la app corre en **modo simulado**; con él, en **modo API** |
 | `auth.ts` | `oidc-client-ts` con PKCE. Token en `sessionStorage`. Dentro del iframe usa **popup** (Entra ID no se deja embeber); fuera, redirect |
+| `connect.ts` | SDK de Connect (`@amazon-connect/app` y `contact` 1.0.14). Dentro de Connect lee ARN, nombre y perfil de enrutamiento del usuario; fuera de Connect devuelve `null` en hasta 4 s y la app sigue sin SDK |
+| `components/AccesoConnect.tsx` | Franja con el usuario de Connect y pantalla de acceso denegado si el perfil de enrutamiento no está en `perfilesPermitidos` |
 | `api.ts` | Cliente de la API con `Authorization: Bearer`; subida directa a S3 con `FormData` |
 | `useCargaSimulada.ts` | Controlador simulado (datos de `mock.ts`) y contrato común `ControladorCarga` |
 | `useCargaApi.ts` | Controlador real: crea la carga, sube, hace polling, confirma, cancela, publica el esquema, descarga reportes. Retoma una carga abierta al recargar la página |
 | `App.tsx` | Elige el controlador según el modo; la vista es la misma |
-| `components/*` | `NuevaCarga` (subida, mapeo, confirmación con hallazgos reales), `Resultado`, `Historial`, `EstadoBase`, `MapeoPerfiles` |
+| `components/*` | `NuevaCarga` (subida de `.xlsx` o `.csv`, mapeo, confirmación con hallazgos reales), `Resultado`, `Historial`, `EstadoBase`, `MapeoPerfiles` |
 
-El mismo build sirve para todos los ambientes: Terraform publica `config.json` (sin secretos) con issuer, client ID, scope e instancia.
+El mismo build sirve para todos los ambientes: Terraform publica `config.json` (sin secretos) con issuer, client ID, scope, instancia y perfiles de enrutamiento permitidos.
+
+### Identidad: SDK de Connect más token OIDC
+
+| Dónde se abre | Interfaz | API |
+|---|---|---|
+| Dentro de Connect | El SDK identifica al usuario. Si su perfil de enrutamiento no está permitido, ve una pantalla de acceso denegado | Exige el token de Cognito o Entra ID. El contexto de Connect viaja en cabeceras `X-Connect-*` y se guarda en la carga como `usuarioConnect` con `verificado: false` |
+| Fuera de Connect | Sin SDK; solo login | Exige el token |
+
+El filtro por perfil de enrutamiento es un control de interfaz: los datos del SDK no están firmados y el backend no puede verificarlos. La autorización real sigue en el token y el grupo. Requiere los permisos `User.Details.View` y `User.Configuration.View` en el registro de la app en Connect, que Terraform declara en `connect.tf`.
 
 ---
 
@@ -126,10 +137,11 @@ Ubicación: `backend/src/carga/`. Python 3.12, arm64, un solo paquete para las c
 | Módulo / función | Disparador | Qué hace |
 |---|---|---|
 | `api.handler` | API Gateway | Rutas de la tabla de abajo. Valida grupos del token, nombre y tamaño del archivo |
-| `procesos.validador` | Evento S3 `cargas/*/original.csv` | Decodifica (UTF-8 con o sin BOM, o Latin-1), detecta `;` o `,`, valida cada fila, escribe reportes |
+| `procesos.validador` | Evento S3 `cargas/*/original.csv` u `original.xlsx` | Lee el archivo, valida cada fila y escribe reportes (ver «Formatos admitidos») |
 | `procesos.encolador` | Invocación asíncrona desde `api` | Parte `validas.jsonl` en mensajes de 25 filas y los envía a SQS |
 | `procesos.escritor` | SQS | `PutProfileObject` por fila; errores de throttling reintentan el mensaje; actualiza contadores y cierra la carga |
-| `reglas.py` | — | Reglas de negocio y mapeo destino → campo del object type |
+| `reglas.py` | — | Reglas de negocio y mapeo destino → campo del object type; un único validador para CSV y Excel |
+| `xlsx.py` | — | Lector de `.xlsx` con la biblioteca estándar (zip + XML en streaming), sin dependencias que empaquetar |
 | `comun.py` | — | Clientes AWS con reintentos adaptativos, helpers de DynamoDB, lock |
 
 ### API
@@ -148,6 +160,15 @@ Todas las rutas exigen token válido (autorizador JWT de API Gateway).
 | `GET /api/esquema` | autenticado | Esquema de mapeo publicado |
 | `PUT /api/esquema` | `grupos_admin` | Publica la versión N+1 (control optimista de concurrencia) |
 
+### Formatos admitidos
+
+| Formato | Lectura | Normalización |
+|---|---|---|
+| **Excel `.xlsx`** | Primera hoja del libro, en streaming. Textos compartidos, celdas en línea, números y booleanos | DNI numérico con menos de 8 dígitos recupera los ceros a la izquierda (`1234567` → `01234567`); fechas guardadas como serial de Excel pasan a `AAAA-MM-DD`; números como `5.1987654321E10` vuelven a `51987654321` |
+| **CSV** | UTF-8 con o sin BOM, o Latin-1 (Excel en español). Delimitador `;` o `,` detectado por la cabecera | Ninguna: el valor se valida tal cual |
+
+El `.xls` antiguo (binario) no se admite. Un archivo sin las columnas nuevas (por ejemplo, sin `fecha_nacimiento`) sigue funcionando porque es opcional.
+
 ### Reglas de validación
 
 | Destino | Regla | Si falla |
@@ -162,13 +183,14 @@ Todas las rutas exigen token válido (autorizador JWT de API Gateway).
 | `Tea` | Decimal 0–200 (acepta coma decimal) | Rechazo; vacío con oferta `S` = advertencia |
 | `FechaAfiliacion` | `AAAA-MM-DD`, no futura | Rechazo |
 | `TipoProducto` | Free, Hiraoka, Club, Miles, Special Edition, Carte Blanche | Rechazo |
+| `BirthDate` (`fecha_nacimiento`) | `AAAA-MM-DD`, no futura. Opcional; para el saludo de cumpleaños | Rechazo si viene mal; vacío no genera hallazgo |
 
 Columnas obligatorias que faltan en la cabecera rechazan el archivo entero. Una fila con cualquier rechazo no se escribe; las advertencias no bloquean.
 
 ### Archivos por carga en S3
 
 ```
-cargas/<id>/original.csv     archivo subido
+cargas/<id>/original.xlsx    archivo subido (o original.csv)
 cargas/<id>/reporte.csv      todos los hallazgos (con BOM para Excel)
 cargas/<id>/hallazgos.json   primeros 5.000 para la pantalla
 cargas/<id>/validas.jsonl    filas listas para escribir
@@ -190,11 +212,15 @@ Se borran solos a los `dias_retencion_archivos` (30 por defecto), porque contien
 ## 5. Customer Profiles
 
 - **Object type `DinersSocio`**: 14 campos `_source.<campo>` → `_profile.*`. Los nombres deben coincidir entre `reglas.CAMPO_OBJECT_TYPE` (Python) y `local.campos_object_type` (Terraform).
-- **Clave**: `_account` sobre `account_number`, `PROFILE + UNIQUE`. `PutProfileObject` es idempotente por DNI: reintentar un mensaje no duplica perfiles.
+- **Claves**:
+  - `_account` sobre `account_number` (DNI), `PROFILE + UNIQUE`. Identifica un único perfil; búsqueda del agente en WhatsApp. `PutProfileObject` es idempotente por DNI: reintentar un mensaje no duplica perfiles.
+  - `_phone` sobre `mobile_phone` (TELEFONO_1), `PROFILE`. Búsqueda por el número que llama en voz (doc viva, 23 de octubre). Sin `UNIQUE` porque un celular puede repetirse entre socios: una búsqueda por teléfono puede devolver más de un perfil, y el flujo de voz debe pedir el documento en ese caso.
 - **Expiración**: `dias_expiracion_perfiles` (1.000 por defecto) en dominio y object type. No se usa `CreateUploadJob`, que limita la expiración a 90 días.
 - **Identity resolution**: desactivada (una sola fuente, DNI único).
 - **Dominio**: se usa el existente de la instancia (`crear_dominio_perfiles = false`) o se crea uno nuevo cifrado con la KMS de la app.
-- **Semántica**: upsert. Un socio que deja de venir en el archivo no se borra; expira según la retención.
+- **Semántica**: upsert. Un socio que deja de venir en el archivo no se borra; expira según la retención. Una celda opcional vacía no borra el valor anterior del perfil.
+- **Cambios de esquema**: los perfiles existentes no se reprocesan. Si se cambia un destino o una columna deja de ser obligatoria, la pantalla de revisión lo advierte y exige confirmarlo antes de publicar; lo que corresponde después es recargar la base completa.
+- **Protección**: el dominio y el object type tienen `prevent_destroy`. Terraform rechaza cualquier plan que los borre o reemplace (por ejemplo, al cambiar `object_type_name`), porque eso eliminaría los objetos de todos los socios.
 
 ---
 
@@ -289,6 +315,7 @@ Desarrollo local: `npm run dev` corre en modo simulado, sin AWS.
 
 **Pendiente:**
 - Estado remoto de Terraform según el pipeline de Diners (bloque `backend "s3"` comentado).
-- `.xlsx`: hoy solo CSV; requiere empaquetar `openpyxl`.
-- El identificador elegido en la pantalla de esquema no cambia la clave del object type; esa la define Terraform.
+- El identificador elegido en la pantalla de esquema no cambia las claves del object type; esas las define Terraform.
+- En `.xlsx`, la vista previa del mapeo en el navegador usa las columnas esperadas, no las del archivo. La validación real en el backend sí lee la cabecera del Excel.
+- Probar con el Excel real de Servicio al Socio: el lector se verificó con libros generados, no con uno guardado por Excel.
 - Respuestas del TL que cambian el diseño: semántica de bajas (upsert vs. reemplazo), D13 en el mismo archivo o aparte, carga completa vs. muestra en desarrollo.

@@ -113,6 +113,32 @@ function datosComparables(fila: MapeoDetectado) {
   return datos;
 }
 
+/**
+ * Efecto de un cambio sobre los perfiles que ya estan en Customer Profiles.
+ * Las cargas actualizan y agregan, pero no borran: lo anterior queda hasta recargar o expirar.
+ */
+function impactoEnPerfiles(actual: MapeoDetectado, anterior: MapeoDetectado): string[] {
+  const impactos: string[] = [];
+  if (actual.destinationId !== anterior.destinationId) {
+    const antes = obtenerDestino(anterior.destinationId)?.label ?? "sin destino";
+    const despues = obtenerDestino(actual.destinationId)?.label ?? "sin destino";
+    impactos.push(
+      `${actual.sourceColumn}: los perfiles existentes conservan el valor anterior en ${antes}. Las próximas cargas escribirán en ${despues}; recarga la base completa para que todos los socios queden igual.`
+    );
+  }
+  if (anterior.required && !actual.required) {
+    impactos.push(
+      `${actual.sourceColumn}: deja de ser obligatoria. Si una fila llega vacía, el perfil conserva el valor que tenía, aunque esté desactualizado.`
+    );
+  }
+  if (actual.identifier !== anterior.identifier) {
+    impactos.push(
+      `${actual.sourceColumn}: las claves de búsqueda de Customer Profiles las define Terraform. Este cambio no modifica cómo el agente encuentra a los socios.`
+    );
+  }
+  return impactos;
+}
+
 function describirCambios(actual: MapeoDetectado, anterior: MapeoDetectado) {
   const cambios: string[] = [];
   if (actual.sourceColumn !== anterior.sourceColumn) cambios.push("columna");
@@ -134,6 +160,7 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
   const [accion, setAccion] = useState<AccionProtegida>(null);
   const [confirmado, setConfirmado] = useState(false);
   const [revisando, setRevisando] = useState(false);
+  const [aceptaImpacto, setAceptaImpacto] = useState(false);
   const [eliminado, setEliminado] = useState(false);
   const [guardado, setGuardado] = useState(false);
   const [mostrarTecnico, setMostrarTecnico] = useState(false);
@@ -149,6 +176,7 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
           JSON.stringify(datosComparables(item.fila)) !== JSON.stringify(datosComparables(item.anterior!))
       )
     );
+  const impactos = cambios.flatMap(({ fila, anterior }) => impactoEnPerfiles(fila, anterior));
 
   useEffect(() => {
     if (!editando || cambios.length === 0) return;
@@ -342,7 +370,10 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
                           <Button
                             variant="primary"
                             disabled={errores.length > 0 || cambios.length === 0}
-                            onClick={() => setRevisando(true)}
+                            onClick={() => {
+                              setAceptaImpacto(false);
+                              setRevisando(true);
+                            }}
                           >
                             Revisar{" "}
                             {cambios.length
@@ -550,6 +581,7 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
                     errorText={!filaEditada.destinationId ? "Selecciona un destino." : undefined}
                   >
                     <Select
+                      expandToViewport
                       selectedOption={
                         opcionesDestino
                           .flatMap((grupo) => grupo.options)
@@ -578,6 +610,7 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
                     description="AWS utiliza este tipo para comparar valores durante las búsquedas."
                   >
                     <Select
+                      expandToViewport
                       selectedOption={opcionesTipo.find((opcion) => opcion.value === filaEditada.contentType) ?? null}
                       onChange={({ detail }) =>
                         setFilaEditada({ ...filaEditada, contentType: detail.selectedOption.value as TipoContenido })
@@ -592,6 +625,7 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
                     description="Determina cómo este campo encuentra o vincula perfiles."
                   >
                     <Select
+                      expandToViewport
                       selectedOption={
                         opcionesIdentificador.find((opcion) => opcion.value === filaEditada.identifier) ?? null
                       }
@@ -657,7 +691,11 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
               <Button variant="link" onClick={() => setRevisando(false)}>
                 Volver al borrador
               </Button>
-              <Button variant="primary" disabled={errores.length > 0} onClick={publicar}>
+              <Button
+                variant="primary"
+                disabled={errores.length > 0 || (impactos.length > 0 && !aceptaImpacto)}
+                onClick={publicar}
+              >
                 Publicar nueva versión
               </Button>
             </SpaceBetween>
@@ -668,6 +706,20 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
           <Alert type="warning" header="La publicación afectará las próximas cargas">
             Las cargas ya procesadas no se modificarán. Revisa cada cambio antes de publicar.
           </Alert>
+          {impactos.length > 0 && (
+            <Alert type="error" header="Impacto en los perfiles que ya están en Customer Profiles">
+              <SpaceBetween size="s">
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {impactos.map((texto) => (
+                    <li key={texto}>{texto}</li>
+                  ))}
+                </ul>
+                <Checkbox checked={aceptaImpacto} onChange={({ detail }) => setAceptaImpacto(detail.checked)}>
+                  Entiendo que los perfiles existentes no cambian hasta la próxima carga completa.
+                </Checkbox>
+              </SpaceBetween>
+            </Alert>
+          )}
           <KeyValuePairs
             columns={3}
             items={[

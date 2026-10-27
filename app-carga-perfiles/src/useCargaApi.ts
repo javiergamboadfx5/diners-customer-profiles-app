@@ -126,8 +126,8 @@ export function useCargaApi(): ControladorCarga {
     ejecutar(async () => {
       const seleccionado = archivo[0];
       if (!seleccionado) return;
-      if (!seleccionado.name.toLowerCase().endsWith(".csv")) {
-        throw new Error("Por ahora el backend acepta solo .csv (UTF-8, separado por coma o punto y coma).");
+      if (!/\.(csv|xlsx)$/i.test(seleccionado.name)) {
+        throw new Error("El archivo debe ser .csv o .xlsx.");
       }
       setResultado(undefined);
       hallazgosDe.current = undefined;

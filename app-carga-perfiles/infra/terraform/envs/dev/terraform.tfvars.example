@@ -1,5 +1,10 @@
 # Copiar a terraform.tfvars y completar. No contiene secretos (OIDC con PKCE no usa client secret).
 app = {
+  # Pruebas sin Entra ID: true crea un user pool de Cognito y se ignoran las oidc_* y grupos_*.
+  crear_cognito_pruebas = false
+  # false en cuentas donde un SCP bloquea profile:* (la app valida, pero no escribe).
+  habilitar_customer_profiles = true
+
   # Entra ID: app registration tipo SPA, redirect URI = output redirect_uri.
   # En el manifest de la API: "accessTokenAcceptedVersion": 2 para que el issuer sea el v2.0.
   oidc_issuer    = "https://login.microsoftonline.com/<tenant-id>/v2.0"
@@ -13,6 +18,9 @@ app = {
 
   connect_instance_alias = "<alias-instancia>"
   connect_instance_arn   = "arn:aws:connect:us-east-1:<cuenta>:instance/<instance-id>"
+
+  # Dentro de Connect, solo estos perfiles de enrutamiento ven la app (nombre, ID o ARN). Vacio = todos.
+  perfiles_enrutamiento_permitidos = ["Servicio al Socio - Carga"]
 
   # Dominio que creo Connect al habilitar Customer Profiles (amazon-connect-<alias>), o uno nuevo.
   crear_dominio_perfiles = false

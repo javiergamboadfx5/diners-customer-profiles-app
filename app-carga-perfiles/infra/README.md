@@ -26,5 +26,4 @@ Requisitos de la cuenta: Customer Profiles habilitado en la instancia y sin SCP 
 ## Pendiente
 
 - Estado remoto: completar el `backend "s3"` según el pipeline de Diners.
-- `.xlsx`: el backend acepta solo CSV; convertir en Lambda requiere empaquetar `openpyxl`.
-- Las claves del object type (DNI → `AccountNumber`, UNIQUE) las define Terraform; cambiar el identificador en la pantalla de esquema no cambia la clave en AWS.
+- Las claves del object type (DNI → `AccountNumber` UNIQUE, TELEFONO_1 → `MobilePhoneNumber`) las define Terraform; cambiar el identificador en la pantalla de esquema no cambia las claves en AWS.

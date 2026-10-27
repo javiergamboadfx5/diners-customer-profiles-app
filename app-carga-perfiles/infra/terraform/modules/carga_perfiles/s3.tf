@@ -78,11 +78,14 @@ resource "aws_s3_bucket_policy" "cargas" {
 
 resource "aws_s3_bucket_notification" "cargas" {
   bucket = aws_s3_bucket.cargas.id
-  lambda_function {
-    lambda_function_arn = aws_lambda_function.fn["validador"].arn
-    events              = ["s3:ObjectCreated:*"]
-    filter_prefix       = "cargas/"
-    filter_suffix       = "original.csv"
+  dynamic "lambda_function" {
+    for_each = ["original.csv", "original.xlsx"]
+    content {
+      lambda_function_arn = aws_lambda_function.fn["validador"].arn
+      events              = ["s3:ObjectCreated:*"]
+      filter_prefix       = "cargas/"
+      filter_suffix       = lambda_function.value
+    }
   }
   depends_on = [aws_lambda_permission.s3_validador]
 }
@@ -152,14 +155,19 @@ resource "aws_s3_object" "config" {
   content_type  = "application/json"
   cache_control = "no-cache"
   content = jsonencode({
-    modo      = "api"
-    apiBase   = "/api"
-    instancia = "${var.connect_instance_alias}.my.connect.aws"
-    ambiente  = var.ambiente
+    modo               = "api"
+    apiBase            = "/api"
+    instancia          = "${var.connect_instance_alias}.my.connect.aws"
+    ambiente           = var.ambiente
+    perfilesPermitidos = var.perfiles_enrutamiento_permitidos
+    dominio = {
+      nombre         = local.dominio
+      diasExpiracion = var.dias_expiracion_perfiles
+    }
     oidc = {
-      authority = var.oidc_issuer
-      clientId  = var.oidc_client_id
-      scope     = var.oidc_scope
+      authority = local.oidc_issuer
+      clientId  = local.oidc_client_id
+      scope     = local.oidc_scope
     }
   })
 }

@@ -7,7 +7,7 @@ locals {
   region      = data.aws_region.actual.name
   raiz_app    = abspath("${path.module}/../../../..")
   tags        = merge({ Proyecto = "diners-carga-perfiles", Ambiente = var.ambiente, GestionadoPor = "terraform" }, var.tags)
-  dominio     = var.crear_dominio_perfiles ? aws_customerprofiles_domain.socios[0].domain_name : var.dominio_perfiles
+  dominio     = length(aws_customerprofiles_domain.socios) > 0 ? aws_customerprofiles_domain.socios[0].domain_name : var.dominio_perfiles
   dominio_arn = "arn:aws:profile:${local.region}:${local.cuenta}:domains/${local.dominio}"
 
   # Campos del object type. Las claves deben coincidir con CAMPO_OBJECT_TYPE en backend/src/carga/reglas.py.
@@ -133,7 +133,7 @@ resource "aws_sqs_queue" "escritura" {
 # ---------- Customer Profiles ----------
 
 resource "aws_customerprofiles_domain" "socios" {
-  count                   = var.crear_dominio_perfiles ? 1 : 0
+  count                   = var.habilitar_customer_profiles && var.crear_dominio_perfiles ? 1 : 0
   domain_name             = var.dominio_perfiles
   default_expiration_days = var.dias_expiracion_perfiles
   default_encryption_key  = aws_kms_key.app.arn
@@ -142,9 +142,22 @@ resource "aws_customerprofiles_domain" "socios" {
     enabled = false
   }
   tags = local.tags
+
+  # Borrar o reemplazar el dominio elimina todos los perfiles de socios.
+  # Para hacerlo a proposito, quitar esta linea en un cambio revisado.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "awscc_customerprofiles_object_type" "socio" {
+  count = var.habilitar_customer_profiles ? 1 : 0
+
+  # Cambiar object_type_name o domain_name obliga a reemplazarlo, y eso borra los objetos de todos los socios:
+  # el agente dejaria de reconocerlos hasta la proxima carga. Terraform rechaza el plan en ese caso.
+  lifecycle {
+    prevent_destroy = true
+  }
   domain_name            = local.dominio
   object_type_name       = var.object_type_name
   description            = "Socio Diners cargado desde la app de carga de perfiles."
@@ -164,11 +177,23 @@ resource "awscc_customerprofiles_object_type" "socio" {
 
   keys = [
     {
+      # DNI: identifica un unico perfil. Busqueda del agente en WhatsApp.
       name = "_account"
       object_type_key_list = [
         {
           field_names          = ["account_number"]
           standard_identifiers = ["PROFILE", "UNIQUE"]
+        }
+      ]
+    },
+    {
+      # TELEFONO_1: busqueda por el numero que llama en voz (definido el 23 de octubre).
+      # Sin UNIQUE: un celular puede repetirse entre socios y no debe fusionarlos.
+      name = "_phone"
+      object_type_key_list = [
+        {
+          field_names          = ["mobile_phone"]
+          standard_identifiers = ["PROFILE"]
         }
       ]
     }

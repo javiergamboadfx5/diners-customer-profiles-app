@@ -1,4 +1,5 @@
 import { token } from "./auth";
+import type { ContextoConnect } from "./connect";
 import type { EsquemaDestino } from "./customerProfilesMapping";
 import type { Hallazgo } from "./mock";
 
@@ -43,11 +44,25 @@ export const configurarApi = (apiBase: string) => {
   base = apiBase.replace(/\/$/, "");
 };
 
+// Contexto de Connect para auditoria. No autoriza: la API decide con el token OIDC.
+let cabecerasConnect: Record<string, string> = {};
+export const configurarContextoConnect = (c: ContextoConnect) => {
+  const ascii = (v?: string) => (v ? encodeURIComponent(v) : "");
+  cabecerasConnect = Object.fromEntries(
+    [
+      ["X-Connect-User-Arn", c.arn],
+      ["X-Connect-User-Name", ascii(c.nombre)],
+      ["X-Connect-Routing-Profile", ascii(c.perfilEnrutamiento?.nombre)]
+    ].filter(([, v]) => Boolean(v)) as [string, string][]
+  );
+};
+
 async function llamar<T>(metodo: string, ruta: string, cuerpo?: unknown): Promise<T> {
   const r = await fetch(`${base}${ruta}`, {
     method: metodo,
     headers: {
       Authorization: `Bearer ${await token()}`,
+      ...cabecerasConnect,
       ...(cuerpo !== undefined ? { "Content-Type": "application/json" } : {})
     },
     body: cuerpo !== undefined ? JSON.stringify(cuerpo) : undefined

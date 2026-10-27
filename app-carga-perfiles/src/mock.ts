@@ -16,7 +16,7 @@ export interface ColumnaArchivo {
   obligatoria: boolean;
 }
 
-/** Las 10 columnas del archivo de carga, segun la version 1.54 del documento vivo. */
+/** Las 11 columnas del archivo de carga, segun el documento vivo (version 20). */
 export const COLUMNAS_ARCHIVO: ColumnaArchivo[] = [
   {
     nombre: "DNI",
@@ -45,7 +45,7 @@ export const COLUMNAS_ARCHIVO: ColumnaArchivo[] = [
   {
     nombre: "TELEFONO_1",
     destino: "MobilePhoneNumber",
-    regla: "11 digitos con prefijo 51",
+    regla: "11 digitos con prefijo 51. Clave de busqueda en voz",
     obligatoria: false
   },
   {
@@ -77,6 +77,12 @@ export const COLUMNAS_ARCHIVO: ColumnaArchivo[] = [
     destino: "EmailAddress",
     regla: "Formato de correo. Por aqui salen las constancias",
     obligatoria: true
+  },
+  {
+    nombre: "fecha_nacimiento",
+    destino: "BirthDate",
+    regla: "AAAA-MM-DD, no posterior a hoy. Saludo de cumpleaños",
+    obligatoria: false
   }
 ];
 

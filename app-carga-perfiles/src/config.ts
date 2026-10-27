@@ -7,6 +7,10 @@ export interface ConfigApi {
   instancia: string;
   ambiente: string;
   oidc: { authority: string; clientId: string; scope: string };
+  /** Perfiles de enrutamiento (nombre, ID o ARN) que pueden usar la app dentro de Connect. Vacio = todos. */
+  perfilesPermitidos?: string[];
+  /** Configuracion del dominio de Customer Profiles, para la tarjeta "Base de socios". */
+  dominio?: { nombre: string; diasExpiracion: number };
 }
 
 export type ConfigApp = ConfigApi | { modo: "mock" };

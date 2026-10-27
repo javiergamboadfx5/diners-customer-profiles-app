@@ -8,7 +8,7 @@ export default function FormatoArchivo() {
   return (
     <ExpandableSection
       headerText="Formato del archivo"
-      headerDescription="Las 10 columnas que debe traer el archivo y la regla que aplica a cada una."
+      headerDescription="Las 11 columnas que debe traer el archivo y la regla que aplica a cada una."
       variant="container"
     >
       <Table<ColumnaArchivo>

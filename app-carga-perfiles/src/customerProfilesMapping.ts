@@ -8,7 +8,8 @@ export const COLUMNAS_SOCIO = [
   "tea",
   "fecha_afiliacion",
   "tipo_producto",
-  "correo"
+  "correo",
+  "fecha_nacimiento"
 ] as const;
 export type ColumnaSocio = (typeof COLUMNAS_SOCIO)[number];
 export type FilaSocio = Record<ColumnaSocio, string>;
@@ -31,7 +32,8 @@ export const REGLAS_VALIDACION: Record<ColumnaSocio, string> = {
   tea: "Decimal entre 0 y 200",
   fecha_afiliacion: "AAAA-MM-DD; no puede ser futura",
   tipo_producto: "Producto permitido por el esquema",
-  correo: "Dirección de correo válida"
+  correo: "Dirección de correo válida",
+  fecha_nacimiento: "AAAA-MM-DD; no puede ser futura. Saludo de cumpleaños"
 };
 export interface ReglaMapeo {
   sourceColumn: ColumnaSocio;
@@ -39,7 +41,7 @@ export interface ReglaMapeo {
   target: string;
   destination: "Estándar" | "Atributo personalizado";
   contentType: TipoContenido;
-  searchKey?: "_account";
+  searchKey?: "_account" | "_phone";
   description: string;
 }
 export const REGLAS_MAPEO: readonly ReglaMapeo[] = [
@@ -66,7 +68,16 @@ export const REGLAS_MAPEO: readonly ReglaMapeo[] = [
     target: "_profile.MobilePhoneNumber",
     destination: "Estándar",
     contentType: "PHONE_NUMBER",
-    description: "Celular del socio en formato 51 + nueve dígitos."
+    searchKey: "_phone",
+    description: "Celular del socio en formato 51 + nueve dígitos. Clave de búsqueda en voz (no única)."
+  },
+  {
+    sourceColumn: "fecha_nacimiento",
+    fieldName: "fechaNacimiento",
+    target: "_profile.BirthDate",
+    destination: "Estándar",
+    contentType: "STRING",
+    description: "Fecha de nacimiento AAAA-MM-DD para el saludo de cumpleaños."
   },
   {
     sourceColumn: "correo",
@@ -117,6 +128,12 @@ export const CUSTOMER_PROFILE_OBJECT_TYPE = {
         StandardIdentifiers: ["PROFILE", "UNIQUE"],
         FieldNames: ["dni"]
       }
+    ],
+    _phone: [
+      {
+        StandardIdentifiers: ["PROFILE"],
+        FieldNames: ["telefono"]
+      }
     ]
   }
 } as const;
@@ -125,6 +142,7 @@ export interface PerfilTransformado {
   FirstName: string;
   MobilePhoneNumber?: string;
   PersonalEmailAddress: string;
+  BirthDate?: string;
   Attributes: Record<string, string>;
 }
 export function mapearFilaAPerfil(fila: FilaSocio): PerfilTransformado {
@@ -133,6 +151,7 @@ export function mapearFilaAPerfil(fila: FilaSocio): PerfilTransformado {
     FirstName: fila.NOMBRE_SOCIO,
     ...(fila.TELEFONO_1 ? { MobilePhoneNumber: `+${fila.TELEFONO_1}` } : {}),
     PersonalEmailAddress: fila.correo,
+    ...(fila.fecha_nacimiento ? { BirthDate: fila.fecha_nacimiento } : {}),
     Attributes: {
       SegmentoValor: fila.SEGMENTO_VALOR,
       MarcaRetener: fila.MARCA_RETENER,
@@ -153,7 +172,8 @@ export const FILA_EJEMPLO: FilaSocio = {
   tea: "34.5",
   fecha_afiliacion: "2019-03-12",
   tipo_producto: "Miles",
-  correo: "mf.quispe@example.com"
+  correo: "mf.quispe@example.com",
+  fecha_nacimiento: "1988-07-14"
 };
 export interface CampoDestino {
   id: string;
@@ -310,8 +330,13 @@ export const ESQUEMA_SOCIOS: EsquemaDestino = {
     sourceColumn: regla.sourceColumn,
     destinationId: destinoPorTarget.get(regla.target)!,
     contentType: regla.contentType,
-    required: regla.sourceColumn !== "TELEFONO_1" && regla.sourceColumn !== "SEGMENTO_VALOR",
-    identifier: regla.searchKey ? "PROFILE_UNIQUE" : "NONE",
+    required: !["TELEFONO_1", "SEGMENTO_VALOR", "tea", "fecha_nacimiento"].includes(regla.sourceColumn),
+    identifier:
+      regla.searchKey === "_account"
+        ? ("PROFILE_UNIQUE" as const)
+        : regla.searchKey === "_phone"
+          ? ("PROFILE" as const)
+          : ("NONE" as const),
     validation: REGLAS_VALIDACION[regla.sourceColumn]
   }))
 };

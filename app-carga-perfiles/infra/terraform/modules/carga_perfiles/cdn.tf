@@ -1,6 +1,6 @@
 locals {
   origen_connect = "https://${var.connect_instance_alias}.my.connect.aws"
-  host_oidc      = regex("^https://[^/]+", var.oidc_issuer)
+  host_oidc      = join(" ", local.hosts_oidc)
   host_cargas    = "https://${aws_s3_bucket.cargas.bucket}.s3.${local.region}.amazonaws.com"
   csp = join("; ", [
     "default-src 'self'",

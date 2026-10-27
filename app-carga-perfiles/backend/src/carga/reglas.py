@@ -45,6 +45,7 @@ ADVERTENCIA_SI_VACIO = {
 }
 
 MAX_HALLAZGOS_DETALLE = 5000
+NOMBRE_FECHA = {"fecha-afiliacion": "fecha_afiliacion", "birth-date": "fecha_nacimiento"}
 
 
 @dataclass
@@ -114,13 +115,13 @@ def _validar_valor(destino: str, valor: str, fila: dict[str, str]) -> tuple[str 
         return (None, None, f"{numero:g}")
     if destino in ("fecha-afiliacion", "birth-date"):
         if not RE_FECHA.match(valor):
-            return (f"{destino.replace('-', '_')} con formato invalido", None, valor)
+            return (f"{NOMBRE_FECHA[destino]} con formato invalido", None, valor)
         try:
             f = date.fromisoformat(valor)
         except ValueError:
-            return (f"{destino.replace('-', '_')} con formato invalido", None, valor)
+            return (f"{NOMBRE_FECHA[destino]} con formato invalido", None, valor)
         if f > date.today():
-            return (f"{destino.replace('-', '_')} no puede ser futura", None, valor)
+            return (f"{NOMBRE_FECHA[destino]} no puede ser futura", None, valor)
         return (None, None, valor)
     if destino == "tipo-producto":
         if valor.lower() not in PRODUCTOS:
@@ -129,11 +130,46 @@ def _validar_valor(destino: str, valor: str, fila: dict[str, str]) -> tuple[str 
     return (None, None, valor)
 
 
+EXCEL_EPOCH = date(1899, 12, 30)
+RE_SERIAL = re.compile(r"^\d{4,6}(\.\d+)?$")
+
+
+def _normalizar_excel(destino: str, valor: str) -> str:
+    """Excel guarda el DNI como numero (pierde ceros a la izquierda) y las fechas como serial."""
+    # Solo 6 o 7 digitos: ceros iniciales perdidos. Un DNI de 4 digitos es un error real y debe rechazarse.
+    if destino == "account-number" and valor.isdigit() and len(valor) in (6, 7):
+        return valor.zfill(8)
+    if destino in ("fecha-afiliacion", "birth-date") and RE_SERIAL.match(valor):
+        from datetime import timedelta
+
+        return (EXCEL_EPOCH + timedelta(days=int(float(valor)))).isoformat()
+    return valor
+
+
 def validar_csv(texto: str, esquema: dict) -> ResultadoValidacion:
-    res = ResultadoValidacion()
     primera = texto.split("\n", 1)[0]
     delimitador = ";" if primera.count(";") > primera.count(",") else ","
-    lector = csv.reader(io.StringIO(texto), delimiter=delimitador)
+    return validar_filas(csv.reader(io.StringIO(texto), delimiter=delimitador), esquema, excel=False)
+
+
+def validar_xlsx(contenido: bytes, esquema: dict) -> ResultadoValidacion:
+    from .xlsx import ErrorXlsx, leer_filas
+
+    try:
+        return validar_filas(leer_filas(contenido), esquema, excel=True)
+    except ErrorXlsx as e:
+        return ResultadoValidacion(error_archivo=str(e))
+
+
+def validar_archivo(nombre: str, contenido: bytes, esquema: dict) -> ResultadoValidacion:
+    if nombre.lower().endswith(".xlsx"):
+        return validar_xlsx(contenido, esquema)
+    return validar_csv(decodificar(contenido), esquema)
+
+
+def validar_filas(lector: Iterable[list[str]], esquema: dict, excel: bool) -> ResultadoValidacion:
+    res = ResultadoValidacion()
+    lector = iter(lector)
     try:
         cabecera = [c.strip() for c in next(lector)]
     except StopIteration:
@@ -162,13 +198,14 @@ def validar_csv(texto: str, esquema: dict) -> ResultadoValidacion:
         return res
 
     vistos: set[str] = set()
-    pos_dni = columnas["account-number"][0]
     for n, valores in enumerate(lector, start=2):
         if not any(v.strip() for v in valores):
             continue
         res.filas_procesadas += 1
         crudo = {d: (valores[p].strip() if p < len(valores) else "") for d, (p, _) in columnas.items()}
-        dni = valores[pos_dni].strip() if pos_dni < len(valores) else ""
+        if excel:
+            crudo = {d: _normalizar_excel(d, v) for d, v in crudo.items()}
+        dni = crudo["account-number"]
         rechazos: list[Hallazgo] = []
         advertencias: list[Hallazgo] = []
         objeto: dict[str, str] = {}

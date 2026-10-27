@@ -19,24 +19,40 @@ variable "ambiente" {
 
 # ---------- Identidad (Entra ID u otro proveedor OIDC) ----------
 
+variable "crear_cognito_pruebas" {
+  description = "true crea un user pool de Cognito como proveedor OIDC de pruebas (cuando aun no hay app registration en Entra ID). Las variables oidc_* se ignoran."
+  type        = bool
+  default     = false
+}
+
 variable "oidc_issuer" {
   description = "Issuer del token. Entra ID: https://login.microsoftonline.com/<tenant-id>/v2.0"
   type        = string
+  default     = ""
 }
 
 variable "oidc_client_id" {
   description = "Client ID del app registration de la SPA (OIDC + PKCE)."
   type        = string
+  default     = ""
 }
 
 variable "oidc_audiences" {
   description = "Audiencias aceptadas por el autorizador JWT (normalmente el client ID de la API)."
   type        = list(string)
+  default     = []
 }
 
 variable "oidc_scope" {
   description = "Scopes que pide la SPA. Ej.: openid profile email api://<client-id>/Cargas.Write"
   type        = string
+  default     = ""
+}
+
+variable "habilitar_customer_profiles" {
+  description = "false omite el dominio y el object type (cuentas donde un SCP bloquea profile:*). La app valida, pero la escritura falla."
+  type        = bool
+  default     = true
 }
 
 variable "grupos_carga" {
@@ -56,6 +72,12 @@ variable "grupos_admin" {
 variable "connect_instance_alias" {
   description = "Alias de la instancia (para frame-ancestors). Ej.: diners-peru"
   type        = string
+}
+
+variable "perfiles_enrutamiento_permitidos" {
+  description = "Perfiles de enrutamiento (nombre, ID o ARN) que ven la app dentro de Connect. Vacio = todos. Es un control de interfaz: la API sigue exigiendo el token OIDC."
+  type        = list(string)
+  default     = []
 }
 
 variable "connect_instance_arn" {

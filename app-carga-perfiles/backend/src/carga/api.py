@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import time
+import urllib.parse
 from datetime import datetime, timezone
 
 from boto3.dynamodb.conditions import Key
@@ -18,7 +19,7 @@ MAX_BYTES = int(os.environ.get("MAX_BYTES", str(100 * 1024 * 1024)))
 GRUPOS_CARGA = {g for g in os.environ.get("GRUPOS_CARGA", "").split(",") if g}
 GRUPOS_ADMIN = {g for g in os.environ.get("GRUPOS_ADMIN", "").split(",") if g}
 LOCK_HORAS = 6
-RE_ARCHIVO = re.compile(r"^[\w .()-]{1,120}\.csv$", re.IGNORECASE)
+RE_ARCHIVO = re.compile(r"^[\w .()-]{1,120}\.(csv|xlsx)$", re.IGNORECASE)
 
 
 class ErrorHttp(Exception):
@@ -55,6 +56,20 @@ def _usuario(claims: dict) -> str:
                or claims.get("name") or claims.get("sub") or "desconocido")
 
 
+RE_ARN_USUARIO = re.compile(r"^arn:aws:connect:[a-z0-9-]+:\d{12}:instance/[0-9a-f-]{36}/agent/[0-9a-f-]{36}$")
+
+
+def _contexto_connect(evento: dict) -> dict | None:
+    """Usuario de Connect que declara el navegador (SDK). Solo auditoria: NO esta verificado."""
+    h = {k.lower(): v for k, v in (evento.get("headers") or {}).items()}
+    arn = h.get("x-connect-user-arn", "")
+    if not RE_ARN_USUARIO.match(arn):
+        return None
+    texto = lambda clave: urllib.parse.unquote(h.get(clave, ""))[:120]  # noqa: E731
+    return {"arn": arn, "nombre": texto("x-connect-user-name"),
+            "perfilEnrutamiento": texto("x-connect-routing-profile"), "verificado": False}
+
+
 def _autorizar(claims: dict, grupos_requeridos: set[str]) -> None:
     if grupos_requeridos and not (_grupos(claims) & grupos_requeridos):
         raise ErrorHttp(403, "Tu usuario no tiene permiso para esta acción.")
@@ -78,7 +93,7 @@ def _crear(evento, claims):
     archivo = str(cuerpo.get("archivo", "")).strip()
     tamano = int(cuerpo.get("tamanoBytes") or 0)
     if not RE_ARCHIVO.match(archivo):
-        raise ErrorHttp(400, "El archivo debe ser .csv y tener un nombre simple.")
+        raise ErrorHttp(400, "El archivo debe ser .csv o .xlsx y tener un nombre simple.")
     if not 0 < tamano <= MAX_BYTES:
         raise ErrorHttp(400, f"El archivo debe pesar entre 1 byte y {MAX_BYTES // (1024 * 1024)} MB.")
     if not comun.esquema_actual():
@@ -113,10 +128,13 @@ def _crear(evento, claims):
         "filasRechazadas": 0,
         "advertencias": 0,
     }
+    connect = _contexto_connect(evento)
+    if connect:
+        item["usuarioConnect"] = connect
     TABLA.put_item(Item=item)
     subida = comun.s3.generate_presigned_post(
         Bucket=comun.BUCKET,
-        Key=f"{comun.prefijo(carga_id)}/original.csv",
+        Key=f"{comun.prefijo(carga_id)}/original.{archivo.rsplit('.', 1)[1].lower()}",
         Conditions=[["content-length-range", 1, MAX_BYTES]],
         ExpiresIn=900,
     )
@@ -139,8 +157,10 @@ def _confirmar(_evento, claims, carga_id):
     _autorizar(claims, GRUPOS_CARGA)
     _carga_o_404(carga_id)
     try:
+        connect = _contexto_connect(_evento)
         item = comun.actualizar_carga(carga_id, condicion_estado="validada", estado="escribiendo",
-                                      confirmadaPor=_usuario(claims), confirmadaEn=comun.ahora())
+                                      confirmadaPor=_usuario(claims), confirmadaEn=comun.ahora(),
+                                      **({"confirmadaPorConnect": connect} if connect else {}))
     except TABLA.meta.client.exceptions.ConditionalCheckFailedException:
         raise ErrorHttp(409, "La carga no está esperando confirmación.")
     comun.lambda_.invoke(FunctionName=comun.FUNCION_ENCOLADOR, InvocationType="Event",

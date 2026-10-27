@@ -6,6 +6,8 @@ resource "awscc_appintegrations_application" "app" {
   name        = local.prefijo
   namespace   = local.prefijo
   description = "Carga y validación de la base de socios en Customer Profiles."
+  # Lo minimo para el SDK: identidad del usuario y su perfil de enrutamiento.
+  permissions = ["User.Details.View", "User.Configuration.View"]
   application_source_config = {
     external_url_config = {
       access_url       = "https://${aws_cloudfront_distribution.app.domain_name}"
