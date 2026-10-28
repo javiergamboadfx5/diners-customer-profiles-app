@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from boto3.dynamodb.conditions import Key
 
-from . import comun
+from . import comun, reglas
 from .comun import TABLA, a_json, log
 
 MAX_BYTES = int(os.environ.get("MAX_BYTES", str(100 * 1024 * 1024)))
@@ -204,6 +204,54 @@ def _esquema(_evento, _claims):
     return 200, {"esquema": esquema}
 
 
+_PARAMS_OBJECT_TYPE = ("Description", "TemplateId", "ExpirationDays", "EncryptionKey", "AllowProfileCreation",
+                       "SourceLastUpdatedTimestampFormat", "MaxProfileObjectCount", "Keys")
+
+
+def _sincronizar_object_type(campos: list[dict]) -> None:
+    """Agrega al object type los atributos personalizados que aun no tiene.
+
+    Nunca quita campos: un atributo eliminado del esquema deja de cargarse, pero los perfiles
+    conservan su valor y el campo sigue en el object type. Las claves se reenvian sin cambios.
+    """
+    if not comun.DOMINIO or not comun.OBJECT_TYPE:
+        return
+    nuevos = {}
+    for c in campos:
+        nombre = reglas.nombre_personalizado(str(c.get("destinationId", "")))
+        if nombre:
+            tipo = "NUMBER" if c.get("contentType") == "NUMBER" else "STRING"
+            nuevos[f"attr_{nombre}"] = {"Source": f"_source.attr_{nombre}",
+                                        "Target": f"_profile.Attributes.{nombre}", "ContentType": tipo}
+    if not nuevos:
+        return
+
+    actual = comun.profiles.get_profile_object_type(DomainName=comun.DOMINIO, ObjectTypeName=comun.OBJECT_TYPE)
+    campos_aws = actual.get("Fields", {})
+    targets = {f["Target"].lower(): n for n, f in campos_aws.items() if f.get("Target")}
+    faltantes = {}
+    for nombre, campo in nuevos.items():
+        if nombre in campos_aws:
+            continue
+        otro = targets.get(campo["Target"].lower())
+        if otro:
+            raise ErrorHttp(400, f"{campo['Target']} ya existe en Customer Profiles (campo {otro}). "
+                                 "Elige ese destino en la lista en vez de crear uno nuevo.")
+        faltantes[nombre] = campo
+    if not faltantes:
+        return
+
+    params = {k: actual[k] for k in _PARAMS_OBJECT_TYPE if actual.get(k) is not None}
+    try:
+        comun.profiles.put_profile_object_type(
+            DomainName=comun.DOMINIO, ObjectTypeName=comun.OBJECT_TYPE,
+            Fields={**campos_aws, **faltantes}, **params,
+        )
+    except comun.profiles.exceptions.BadRequestException as e:
+        raise ErrorHttp(400, f"Customer Profiles rechazó los atributos nuevos: {e.response['Error'].get('Message', '')}")
+    log.info("object type actualizado: %s", ", ".join(faltantes))
+
+
 def _publicar_esquema(evento, claims):
     _autorizar(claims, GRUPOS_ADMIN or GRUPOS_CARGA)
     nuevo = json.loads(evento.get("body") or "{}").get("esquema") or {}
@@ -217,6 +265,14 @@ def _publicar_esquema(evento, claims):
         raise ErrorHttp(400, "Define exactamente un identificador principal.")
     if not any(c.get("destinationId") == "account-number" for c in campos):
         raise ErrorHttp(400, "Una columna debe mapearse a AccountNumber (DNI).")
+    for c in campos:
+        destino = str(c.get("destinationId", ""))
+        if destino.startswith(reglas.PREFIJO_PERSONALIZADO) and not reglas.nombre_personalizado(destino):
+            raise ErrorHttp(400, f"Nombre de atributo inválido: {destino[len(reglas.PREFIJO_PERSONALIZADO):]}")
+        if c.get("contentType") not in ("STRING", "NUMBER", "PHONE_NUMBER", "EMAIL_ADDRESS", "NAME"):
+            raise ErrorHttp(400, f"Tipo de contenido inválido en {c.get('sourceColumn')}.")
+    # Antes de publicar: si AWS rechaza el cambio del object type, la version no se publica.
+    _sincronizar_object_type(campos)
 
     nuevo["updatedAt"] = comun.ahora()
     nuevo["updatedBy"] = _usuario(claims)

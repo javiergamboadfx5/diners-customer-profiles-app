@@ -12,23 +12,38 @@ locals {
 
   # Campos del object type. Las claves deben coincidir con CAMPO_OBJECT_TYPE en backend/src/carga/reglas.py.
   campos_object_type = {
-    account_number        = { target = "_profile.AccountNumber",                  tipo = "STRING" }
-    first_name            = { target = "_profile.FirstName",                      tipo = "STRING" }
-    mobile_phone          = { target = "_profile.MobilePhoneNumber",              tipo = "PHONE_NUMBER" }
-    personal_email        = { target = "_profile.PersonalEmailAddress",           tipo = "EMAIL_ADDRESS" }
-    birth_date            = { target = "_profile.BirthDate",                      tipo = "STRING" }
-    segmento_valor        = { target = "_profile.Attributes.SegmentoValor",       tipo = "STRING" }
-    marca_retener         = { target = "_profile.Attributes.MarcaRetener",        tipo = "STRING" }
-    tiene_oferta          = { target = "_profile.Attributes.TieneOferta",         tipo = "STRING" }
-    tea                   = { target = "_profile.Attributes.Tea",                 tipo = "NUMBER" }
-    fecha_afiliacion      = { target = "_profile.Attributes.FechaAfiliacion",     tipo = "STRING" }
-    tipo_producto         = { target = "_profile.Attributes.TipoProducto",        tipo = "STRING" }
+    # Campos estandar de primer nivel del perfil (los mismos de CreateProfile). Todos se pueden
+    # elegir como destino en la pantalla de esquema; los que no tengan columna simplemente no llegan.
+    account_number         = { target = "_profile.AccountNumber", tipo = "STRING" }
+    first_name             = { target = "_profile.FirstName", tipo = "STRING" }
+    middle_name            = { target = "_profile.MiddleName", tipo = "STRING" }
+    last_name              = { target = "_profile.LastName", tipo = "STRING" }
+    birth_date             = { target = "_profile.BirthDate", tipo = "STRING" }
+    gender_string          = { target = "_profile.GenderString", tipo = "STRING" }
+    party_type_string      = { target = "_profile.PartyTypeString", tipo = "STRING" }
+    business_name          = { target = "_profile.BusinessName", tipo = "STRING" }
+    additional_information = { target = "_profile.AdditionalInformation", tipo = "STRING" }
+    phone_number           = { target = "_profile.PhoneNumber", tipo = "PHONE_NUMBER" }
+    mobile_phone           = { target = "_profile.MobilePhoneNumber", tipo = "PHONE_NUMBER" }
+    home_phone             = { target = "_profile.HomePhoneNumber", tipo = "PHONE_NUMBER" }
+    business_phone         = { target = "_profile.BusinessPhoneNumber", tipo = "PHONE_NUMBER" }
+    email_address          = { target = "_profile.EmailAddress", tipo = "EMAIL_ADDRESS" }
+    personal_email         = { target = "_profile.PersonalEmailAddress", tipo = "EMAIL_ADDRESS" }
+    business_email         = { target = "_profile.BusinessEmailAddress", tipo = "EMAIL_ADDRESS" }
+    # Atributos personalizados
+    monto_oferta     = { target = "_profile.Attributes.MontoOferta", tipo = "NUMBER" }
+    segmento_valor   = { target = "_profile.Attributes.SegmentoValor", tipo = "STRING" }
+    marca_retener    = { target = "_profile.Attributes.MarcaRetener", tipo = "STRING" }
+    tiene_oferta     = { target = "_profile.Attributes.TieneOferta", tipo = "STRING" }
+    tea              = { target = "_profile.Attributes.Tea", tipo = "NUMBER" }
+    fecha_afiliacion = { target = "_profile.Attributes.FechaAfiliacion", tipo = "STRING" }
+    tipo_producto    = { target = "_profile.Attributes.TipoProducto", tipo = "STRING" }
     # Campos confirmados 26-27 de octubre
-    score_oferta          = { target = "_profile.Attributes.ScoreOferta",         tipo = "STRING" }
-    linea_credito         = { target = "_profile.Attributes.LineaCredito",        tipo = "STRING" }
-    callcenter_cobranza   = { target = "_profile.Attributes.CallcenterCobranza",  tipo = "STRING" }
-    central_cobranza      = { target = "_profile.Attributes.CentralCobranza",     tipo = "STRING" }
-    refinanciado          = { target = "_profile.Attributes.Refinanciado",        tipo = "STRING" }
+    score_oferta        = { target = "_profile.Attributes.ScoreOferta", tipo = "STRING" }
+    linea_credito       = { target = "_profile.Attributes.LineaCredito", tipo = "STRING" }
+    callcenter_cobranza = { target = "_profile.Attributes.CallcenterCobranza", tipo = "STRING" }
+    central_cobranza    = { target = "_profile.Attributes.CentralCobranza", tipo = "STRING" }
+    refinanciado        = { target = "_profile.Attributes.Refinanciado", tipo = "STRING" }
   }
 }
 
@@ -158,8 +173,13 @@ resource "awscc_customerprofiles_object_type" "socio" {
 
   # Cambiar object_type_name o domain_name obliga a reemplazarlo, y eso borra los objetos de todos los socios:
   # el agente dejaria de reconocerlos hasta la proxima carga. Terraform rechaza el plan en ese caso.
+  # fields: Terraform crea los campos base, pero despues la app agrega los atributos personalizados
+  # (PutProfileObjectType al publicar el esquema). Sin ignore_changes, el proximo apply los borraria.
+  # Para cambiar un campo base: hacerlo en un cambio revisado con -replace o temporalmente sin esta linea,
+  # incluyendo en local.campos_object_type los attr_* que ya existan en AWS.
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = [fields]
   }
   domain_name            = local.dominio
   object_type_name       = var.object_type_name
@@ -195,7 +215,7 @@ resource "awscc_customerprofiles_object_type" "socio" {
       name = "_phone"
       object_type_key_list = [
         {
-          field_names          = ["mobile_phone"]
+          field_names          = ["phone_number"]
           standard_identifiers = ["PROFILE"]
         }
       ]

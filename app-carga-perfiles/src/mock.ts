@@ -44,7 +44,7 @@ export const COLUMNAS_ARCHIVO: ColumnaArchivo[] = [
   },
   {
     nombre: "TELEFONO_1",
-    destino: "MobilePhoneNumber",
+    destino: "PhoneNumber",
     regla: "11 digitos con prefijo 51. Clave de busqueda en voz",
     obligatoria: false
   },

@@ -16,11 +16,25 @@ from typing import Iterable
 # Destino -> nombre del campo en el object type de Customer Profiles (_source.<campo>).
 # Debe coincidir con local.campos_object_type en Terraform.
 CAMPO_OBJECT_TYPE = {
+    # Campos estandar de primer nivel (_profile.<Campo>)
     "account-number":      "account_number",
     "first-name":          "first_name",
-    "mobile-phone":        "mobile_phone",
-    "personal-email":      "personal_email",
+    "middle-name":         "middle_name",
+    "last-name":           "last_name",
     "birth-date":          "birth_date",
+    "gender":              "gender_string",
+    "party-type":          "party_type_string",
+    "business-name":       "business_name",
+    "additional-info":     "additional_information",
+    "phone-number":        "phone_number",
+    "mobile-phone":        "mobile_phone",
+    "home-phone":          "home_phone",
+    "business-phone":      "business_phone",
+    "email-address":       "email_address",
+    "personal-email":      "personal_email",
+    "business-email":      "business_email",
+    # Atributos personalizados (_profile.Attributes.<Campo>)
+    "monto-oferta":        "monto_oferta",
     "segmento-valor":      "segmento_valor",
     "marca-retener":       "marca_retener",
     "tiene-oferta":        "tiene_oferta",
@@ -35,6 +49,36 @@ CAMPO_OBJECT_TYPE = {
     "refinanciado":        "refinanciado",
 }
 
+# Atributos creados desde la pantalla de esquema: destino "custom:<Nombre>" -> campo attr_<Nombre>
+# -> _profile.Attributes.<Nombre>. La API los agrega al object type al publicar (api._sincronizar_object_type).
+PREFIJO_PERSONALIZADO = "custom:"
+RE_NOMBRE_ATRIBUTO = re.compile(r"^[A-Z][A-Za-z0-9]{0,62}$")
+
+
+def nombre_personalizado(destino: str) -> str | None:
+    if not destino.startswith(PREFIJO_PERSONALIZADO):
+        return None
+    nombre = destino[len(PREFIJO_PERSONALIZADO):]
+    return nombre if RE_NOMBRE_ATRIBUTO.match(nombre) else None
+
+
+def campo_object_type(destino: str) -> str | None:
+    """Nombre del campo en el object type para un destino del esquema, o None si no se conoce."""
+    if destino in CAMPO_OBJECT_TYPE:
+        return CAMPO_OBJECT_TYPE[destino]
+    nombre = nombre_personalizado(destino)
+    return f"attr_{nombre}" if nombre else None
+
+
+def _validar_personalizado(valor: str, tipo: str) -> tuple[str | None, str | None, str]:
+    if tipo != "NUMBER":
+        return (None, None, valor)
+    try:
+        return (None, None, f"{float(valor.replace(',', '.')):g}")
+    except ValueError:
+        return ("Valor no numerico", None, valor)
+
+
 PRODUCTOS = {"free", "hiraoka", "club", "miles", "special edition", "carte blanche"}
 RE_DNI = re.compile(r"^\d{8}$")
 RE_TELEFONO = re.compile(r"^51\d{9}$")
@@ -42,6 +86,7 @@ RE_CORREO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 RE_FECHA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # Vacios que no son error, sino advertencia (el perfil se escribe sin el dato).
 ADVERTENCIA_SI_VACIO = {
+    "phone-number":   "Campo vacío: el socio no recibirá llamada de vuelta",
     "mobile-phone":   "Campo vacío: el socio no recibirá llamada de vuelta",
     "segmento-valor": "Campo vacío: se enrutará al grupo general",
     "score-oferta":   "Campo vacío: no se puede determinar el canal de llamada de venta",
@@ -90,12 +135,12 @@ def _validar_valor(destino: str, valor: str, fila: dict[str, str]) -> tuple[str 
     """Devuelve (rechazo, advertencia, valor_normalizado)."""
     if destino == "account-number":
         return (None if RE_DNI.match(valor) else "DNI con longitud invalida", None, valor)
-    if destino in ("mobile-phone", "phone-number"):
+    if destino in ("phone-number", "mobile-phone", "home-phone", "business-phone"):
         digitos = re.sub(r"[\s-]", "", valor).lstrip("+")
         if not RE_TELEFONO.match(digitos):
             return ("Telefono con formato invalido", None, valor)
         return (None, None, f"+{digitos}")
-    if destino == "personal-email":
+    if destino in ("email-address", "personal-email", "business-email"):
         return (None if RE_CORREO.match(valor) else "Correo con formato invalido", None, valor.lower())
     if destino == "segmento-valor":
         return (None if valor in ("1", "2", "3") else "SEGMENTO_VALOR debe ser 1, 2 o 3", None, valor)
@@ -115,6 +160,14 @@ def _validar_valor(destino: str, valor: str, fila: dict[str, str]) -> tuple[str 
             return ("tea no es un numero", None, valor)
         if not 0 <= numero <= 200:
             return ("tea fuera del rango permitido", None, valor)
+        return (None, None, f"{numero:g}")
+    if destino == "monto-oferta":
+        try:
+            numero = float(valor.replace(",", "."))
+        except ValueError:
+            return ("monto_oferta no es un numero", None, valor)
+        if numero < 0:
+            return ("monto_oferta no puede ser negativo", None, valor)
         return (None, None, f"{numero:g}")
     if destino in ("fecha-afiliacion", "birth-date"):
         if not RE_FECHA.match(valor):
@@ -203,7 +256,7 @@ def validar_filas(lector: Iterable[list[str]], esquema: dict, excel: bool) -> Re
             if campo.get("required"):
                 faltantes.append(campo["sourceColumn"])
             continue
-        if campo["destinationId"] not in CAMPO_OBJECT_TYPE:
+        if campo_object_type(campo["destinationId"]) is None:
             continue
         columnas[campo["destinationId"]] = (pos, campo)
     if faltantes:
@@ -234,11 +287,14 @@ def validar_filas(lector: Iterable[list[str]], esquema: dict, excel: bool) -> Re
                 elif campo.get("required"):
                     rechazos.append(Hallazgo(n, dni, col, f"{col} es obligatorio", "rechazo"))
                 continue
-            rechazo, advertencia, normalizado = _validar_valor(destino, valor, crudo)
+            if nombre_personalizado(destino):
+                rechazo, advertencia, normalizado = _validar_personalizado(valor, campo.get("contentType", "STRING"))
+            else:
+                rechazo, advertencia, normalizado = _validar_valor(destino, valor, crudo)
             if rechazo:
                 rechazos.append(Hallazgo(n, dni, col, rechazo, "rechazo"))
             else:
-                objeto[CAMPO_OBJECT_TYPE[destino]] = normalizado
+                objeto[campo_object_type(destino)] = normalizado
             if advertencia:
                 advertencias.append(Hallazgo(n, dni, col, advertencia, "advertencia"))
         if not crudo.get("tea") and objeto.get("tiene_oferta") == "S" and "tea" in columnas:

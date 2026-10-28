@@ -56,7 +56,7 @@ export default function EstadoBase({ ultimaCarga, totalPerfiles, dominio }: Prop
             columns={4}
             items={[
               { label: "Dominio", value: dominio?.nombre ?? DOMINIO_PERFILES },
-              { label: "Claves de búsqueda", value: "DNI → AccountNumber · Teléfono → MobilePhoneNumber" },
+              { label: "Claves de búsqueda", value: "DNI → AccountNumber · Teléfono → PhoneNumber" },
               {
                 label: "Resolución de identidad",
                 value: <StatusIndicator type="stopped">Desactivada</StatusIndicator>

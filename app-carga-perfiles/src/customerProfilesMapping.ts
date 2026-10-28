@@ -5,6 +5,7 @@ export const COLUMNAS_SOCIO = [
   "MARCA_RETENER",
   "TELEFONO_1",
   "tiene_oferta",
+  "MONTO_OFERTA",
   "tea",
   "fecha_afiliacion",
   "tipo_producto",
@@ -35,6 +36,7 @@ export const REGLAS_VALIDACION: Record<ColumnaSocio, string> = {
   MARCA_RETENER: "1 o 2; obligatorio",
   TELEFONO_1: "11 dígitos con prefijo 51; vacío genera advertencia",
   tiene_oferta: "S o N; obligatorio",
+  MONTO_OFERTA: "Número mayor o igual a 0",
   tea: "Decimal entre 0 y 200",
   fecha_afiliacion: "AAAA-MM-DD; no puede ser futura",
   tipo_producto: "Producto permitido por el esquema",
@@ -50,6 +52,7 @@ export const REGLAS_VALIDACION: Record<ColumnaSocio, string> = {
 const COLUMNAS_OPCIONALES: readonly ColumnaSocio[] = [
   "TELEFONO_1",
   "SEGMENTO_VALOR",
+  "MONTO_OFERTA",
   "tea",
   "fecha_nacimiento",
   "SCORE_OFERTA",
@@ -88,7 +91,7 @@ export const REGLAS_MAPEO: readonly ReglaMapeo[] = [
   {
     sourceColumn: "TELEFONO_1",
     fieldName: "telefono",
-    target: "_profile.MobilePhoneNumber",
+    target: "_profile.PhoneNumber",
     destination: "Estándar",
     contentType: "PHONE_NUMBER",
     searchKey: "_phone",
@@ -105,16 +108,17 @@ export const REGLAS_MAPEO: readonly ReglaMapeo[] = [
   {
     sourceColumn: "correo",
     fieldName: "correo",
-    target: "_profile.PersonalEmailAddress",
+    target: "_profile.EmailAddress",
     destination: "Estándar",
     contentType: "EMAIL_ADDRESS",
-    description: "Correo personal para confirmaciones y constancias."
+    description: "Correo del socio para confirmaciones y constancias."
   },
   ...(
     [
       ["SEGMENTO_VALOR", "segmentoValor", "SegmentoValor", "STRING", "Segmento 1, 2 o 3 para decisiones de atención."],
       ["MARCA_RETENER", "marcaRetener", "MarcaRetener", "STRING", "Marca 1 o 2 para la ruta de retención."],
       ["tiene_oferta", "tieneOferta", "TieneOferta", "STRING", "Indica si el socio tiene una oferta vigente."],
+      ["MONTO_OFERTA", "montoOferta", "MontoOferta", "NUMBER", "Monto de la oferta vigente del socio."],
       ["tea", "tea", "Tea", "NUMBER", "Tasa efectiva anual asociada a la oferta."],
       [
         "fecha_afiliacion",
@@ -186,8 +190,8 @@ export const CUSTOMER_PROFILE_OBJECT_TYPE = {
 export interface PerfilTransformado {
   AccountNumber: string;
   FirstName: string;
-  MobilePhoneNumber?: string;
-  PersonalEmailAddress: string;
+  PhoneNumber?: string;
+  EmailAddress: string;
   BirthDate?: string;
   Attributes: Record<string, string>;
 }
@@ -195,8 +199,8 @@ export function mapearFilaAPerfil(fila: FilaSocio): PerfilTransformado {
   return {
     AccountNumber: fila.DNI,
     FirstName: fila.NOMBRE_SOCIO,
-    ...(fila.TELEFONO_1 ? { MobilePhoneNumber: `+${fila.TELEFONO_1}` } : {}),
-    PersonalEmailAddress: fila.correo,
+    ...(fila.TELEFONO_1 ? { PhoneNumber: `+${fila.TELEFONO_1}` } : {}),
+    EmailAddress: fila.correo,
     ...(fila.fecha_nacimiento ? { BirthDate: fila.fecha_nacimiento } : {}),
     Attributes: {
       SegmentoValor: fila.SEGMENTO_VALOR,
@@ -206,6 +210,7 @@ export function mapearFilaAPerfil(fila: FilaSocio): PerfilTransformado {
       FechaAfiliacion: fila.fecha_afiliacion,
       TipoProducto: fila.tipo_producto,
       // Opcionales: una celda vacía no se envía para no borrar el valor anterior del perfil.
+      ...(fila.MONTO_OFERTA ? { MontoOferta: fila.MONTO_OFERTA } : {}),
       ...(fila.SCORE_OFERTA ? { ScoreOferta: fila.SCORE_OFERTA } : {}),
       ...(fila.LINEA_CREDITO ? { LineaCredito: fila.LINEA_CREDITO } : {}),
       ...(fila.CALLCENTER_COBRANZA ? { CallcenterCobranza: fila.CALLCENTER_COBRANZA } : {}),
@@ -221,6 +226,7 @@ export const FILA_EJEMPLO: FilaSocio = {
   MARCA_RETENER: "1",
   TELEFONO_1: "51987654412",
   tiene_oferta: "S",
+  MONTO_OFERTA: "15000",
   tea: "34.5",
   fecha_afiliacion: "2019-03-12",
   tipo_producto: "Miles",
@@ -276,6 +282,7 @@ const destinosEstandar: CampoDestino[] = [
     "Nombre o nombre completo cuando la fuente no lo separa.",
     ["nombre", "nombres", "nombre_socio", "firstname"]
   ],
+  ["middle-name", "MiddleName", "_profile.MiddleName", "STRING", "Segundo nombre.", ["segundo_nombre", "middlename"]],
   [
     "last-name",
     "LastName",
@@ -283,6 +290,39 @@ const destinosEstandar: CampoDestino[] = [
     "STRING",
     "Apellidos del cliente.",
     ["apellido", "apellidos", "lastname"]
+  ],
+  [
+    "birth-date",
+    "BirthDate",
+    "_profile.BirthDate",
+    "STRING",
+    "Fecha de nacimiento.",
+    ["fecha_nacimiento", "birthdate"]
+  ],
+  ["gender", "GenderString", "_profile.GenderString", "STRING", "Género (texto libre).", ["genero", "sexo", "gender"]],
+  [
+    "party-type",
+    "PartyTypeString",
+    "_profile.PartyTypeString",
+    "STRING",
+    "Tipo de cliente: persona o empresa (texto libre).",
+    ["tipo_cliente", "tipo_persona", "partytype"]
+  ],
+  [
+    "business-name",
+    "BusinessName",
+    "_profile.BusinessName",
+    "STRING",
+    "Razón social o nombre de la empresa.",
+    ["razon_social", "empresa", "businessname"]
+  ],
+  [
+    "additional-info",
+    "AdditionalInformation",
+    "_profile.AdditionalInformation",
+    "STRING",
+    "Información adicional del perfil (texto libre).",
+    ["informacion_adicional", "observaciones", "additionalinformation"]
   ],
   [
     "phone-number",
@@ -301,28 +341,44 @@ const destinosEstandar: CampoDestino[] = [
     ["celular", "movil", "mobile", "mobilephonenumber"]
   ],
   [
+    "home-phone",
+    "HomePhoneNumber",
+    "_profile.HomePhoneNumber",
+    "PHONE_NUMBER",
+    "Teléfono de casa.",
+    ["telefono_casa", "telefono_fijo", "homephonenumber"]
+  ],
+  [
+    "business-phone",
+    "BusinessPhoneNumber",
+    "_profile.BusinessPhoneNumber",
+    "PHONE_NUMBER",
+    "Teléfono del trabajo.",
+    ["telefono_trabajo", "telefono_oficina", "businessphonenumber"]
+  ],
+  [
+    "email-address",
+    "EmailAddress",
+    "_profile.EmailAddress",
+    "EMAIL_ADDRESS",
+    "Correo electrónico principal.",
+    ["correo", "email", "correo_electronico", "emailaddress"]
+  ],
+  [
     "personal-email",
     "PersonalEmailAddress",
     "_profile.PersonalEmailAddress",
     "EMAIL_ADDRESS",
     "Correo electrónico personal.",
-    ["correo", "email", "correo_electronico", "personalemailaddress"]
+    ["correo_personal", "personalemailaddress"]
   ],
   [
-    "birth-date",
-    "BirthDate",
-    "_profile.BirthDate",
-    "STRING",
-    "Fecha de nacimiento.",
-    ["fecha_nacimiento", "birthdate"]
-  ],
-  [
-    "profile-type",
-    "ProfileType",
-    "_profile.ProfileType",
-    "STRING",
-    "Tipo de perfil de Customer Profiles.",
-    ["profiletype", "tipo_perfil"]
+    "business-email",
+    "BusinessEmailAddress",
+    "_profile.BusinessEmailAddress",
+    "EMAIL_ADDRESS",
+    "Correo electrónico del trabajo.",
+    ["correo_trabajo", "correo_corporativo", "businessemailaddress"]
   ]
 ].map(([id, label, target, contentType, description, aliases]) => ({
   id: id as string,
@@ -349,6 +405,7 @@ const destinosPersonalizados: CampoDestino[] = [
     ["marca_retener", "retener"]
   ],
   ["tiene-oferta", "Attributes.TieneOferta", "_profile.Attributes.TieneOferta", "STRING", ["tiene_oferta", "oferta"]],
+  ["monto-oferta", "Attributes.MontoOferta", "_profile.Attributes.MontoOferta", "NUMBER", ["monto_oferta", "monto"]],
   ["tea", "Attributes.Tea", "_profile.Attributes.Tea", "NUMBER", ["tea", "tasa"]],
   [
     "fecha-afiliacion",
@@ -364,13 +421,7 @@ const destinosPersonalizados: CampoDestino[] = [
     "STRING",
     ["tipo_producto", "producto"]
   ],
-  [
-    "score-oferta",
-    "Attributes.ScoreOferta",
-    "_profile.Attributes.ScoreOferta",
-    "STRING",
-    ["score_oferta", "score"]
-  ],
+  ["score-oferta", "Attributes.ScoreOferta", "_profile.Attributes.ScoreOferta", "STRING", ["score_oferta", "score"]],
   [
     "linea-credito",
     "Attributes.LineaCredito",
@@ -403,6 +454,42 @@ const destinosPersonalizados: CampoDestino[] = [
   aliases: aliases as string[]
 }));
 export const CAMPOS_DESTINO: readonly CampoDestino[] = [...destinosEstandar, ...destinosPersonalizados];
+
+// Atributos personalizados creados desde la pantalla: el destino se describe a si mismo ("custom:<Nombre>").
+// Al publicar, el backend agrega el campo attr_<Nombre> -> _profile.Attributes.<Nombre> al object type.
+export const PREFIJO_PERSONALIZADO = "custom:";
+export const RE_NOMBRE_ATRIBUTO = /^[A-Z][A-Za-z0-9]{0,62}$/;
+
+export function esDestinoPersonalizado(id: string | null): boolean {
+  return Boolean(id?.startsWith(PREFIJO_PERSONALIZADO));
+}
+
+export function buscarDestino(id: string | null, contentType: TipoContenido = "STRING"): CampoDestino | undefined {
+  if (!id) return undefined;
+  const fijo = CAMPOS_DESTINO.find((campo) => campo.id === id);
+  if (fijo || !esDestinoPersonalizado(id)) return fijo;
+  const nombre = id.slice(PREFIJO_PERSONALIZADO.length);
+  return {
+    id,
+    label: `Attributes.${nombre}`,
+    target: `_profile.Attributes.${nombre}`,
+    contentType,
+    category: "Atributos personalizados",
+    description: "Atributo personalizado creado desde el esquema.",
+    aliases: []
+  };
+}
+
+/** Devuelve un error si el nombre no sirve para un atributo nuevo. */
+export function validarNombreAtributo(nombre: string, idsEnUso: readonly (string | null)[]): string | undefined {
+  if (!RE_NOMBRE_ATRIBUTO.test(nombre)) return "Empieza con mayúscula; solo letras y números, máximo 63.";
+  const n = nombre.toLowerCase();
+  const usados = [
+    ...CAMPOS_DESTINO.map((campo) => campo.target.split(".").pop()!.toLowerCase()),
+    ...idsEnUso.filter(esDestinoPersonalizado).map((id) => id!.slice(PREFIJO_PERSONALIZADO.length).toLowerCase())
+  ];
+  return usados.includes(n) ? "Ya existe un atributo con ese nombre." : undefined;
+}
 const destinoPorTarget = new Map(CAMPOS_DESTINO.map((campo) => [campo.target, campo.id]));
 export const ESQUEMA_SOCIOS: EsquemaDestino = {
   id: "diners-socios",
@@ -437,7 +524,8 @@ export interface MapeoDetectado {
   identifier: IdentificadorCampo;
   validation: string;
 }
-function normalizarCampo(valor: string) {
+// Igual que _normalizar en backend/src/carga/reglas.py: TELEFONO_1, telefono_1 y "Teléfono 1" son la misma columna.
+export function normalizarCampo(valor: string) {
   return valor
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -487,15 +575,19 @@ export function generarObjectType(esquema: EsquemaDestino, mapeo: readonly Mapeo
     Boolean(fila.destinationId)
   );
   const fields = Object.fromEntries(
-    resueltos.map((fila) => {
-      const destino = CAMPOS_DESTINO.find((campo) => campo.id === fila.destinationId)!;
+    resueltos.flatMap((fila) => {
+      // Un esquema publicado puede traer destinos que esta version del frontend no conoce: se omiten en vez de romper la pantalla.
+      const destino = buscarDestino(fila.destinationId, fila.contentType);
+      if (!destino) return [];
       return [
-        fila.sourceColumn,
-        {
-          Source: `_source.${fila.sourceColumn}`,
-          Target: destino.target,
-          ContentType: fila.contentType
-        }
+        [
+          fila.sourceColumn,
+          {
+            Source: `_source.${fila.sourceColumn}`,
+            Target: destino.target,
+            ContentType: fila.contentType
+          }
+        ]
       ];
     })
   );
@@ -523,12 +615,12 @@ export function generarObjectType(esquema: EsquemaDestino, mapeo: readonly Mapeo
 }
 export function validarConfiguracionMapeo(esquema: EsquemaDestino, mapeo: readonly MapeoDetectado[]) {
   const errores: string[] = [];
-  const nombres = mapeo.map((fila) => fila.sourceColumn.trim());
+  const nombres = mapeo.map((fila) => normalizarCampo(fila.sourceColumn));
   if (mapeo.some((fila) => !/^[a-zA-Z0-9_.-]{1,64}$/.test(fila.sourceColumn))) {
     errores.push("Corrige los nombres de columna marcados como inválidos.");
   }
   if (new Set(nombres).size !== nombres.length) {
-    errores.push("Cada columna esperada debe tener un nombre diferente.");
+    errores.push("Cada columna esperada debe tener un nombre diferente (sin distinguir mayúsculas).");
   }
   if (mapeo.some((fila) => !fila.destinationId)) {
     errores.push("Asigna un destino a todas las columnas.");

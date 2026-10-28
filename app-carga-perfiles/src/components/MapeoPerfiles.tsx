@@ -23,11 +23,18 @@ import {
   IdentificadorCampo,
   MapeoDetectado,
   TIPOS_CONTENIDO,
+  PREFIJO_PERSONALIZADO,
   TipoContenido,
+  buscarDestino,
+  esDestinoPersonalizado,
   generarObjectType,
   inferirMapeo,
-  validarConfiguracionMapeo
+  normalizarCampo,
+  validarConfiguracionMapeo,
+  validarNombreAtributo
 } from "../customerProfilesMapping";
+
+const NUEVO_DESTINO = "__nuevo__";
 
 type AccionProtegida = "edit" | "delete" | "discard" | null;
 
@@ -97,8 +104,46 @@ const opcionesIdentificador = (
   description: dato.token ? `${dato.description} · ${dato.token}` : dato.description
 }));
 
-function obtenerDestino(destinationId: string | null) {
-  return CAMPOS_DESTINO.find((campo) => campo.id === destinationId);
+function obtenerDestino(destinationId: string | null, contentType?: TipoContenido) {
+  return buscarDestino(destinationId, contentType);
+}
+
+/** Opciones del selector: las fijas, los personalizados que ya usa el borrador y "nuevo atributo". */
+function construirOpcionesDestino(mapeo: readonly MapeoDetectado[]) {
+  const personalizados = [
+    ...new Set(mapeo.map((fila) => fila.destinationId).filter((id): id is string => esDestinoPersonalizado(id)))
+  ].map((id) => {
+    const destino = buscarDestino(id)!;
+    return { value: id, label: destino.label, description: destino.target, filteringTags: [] as string[] };
+  });
+  return [
+    opcionesDestino[0],
+    { ...opcionesDestino[1], options: [...opcionesDestino[1].options, ...personalizados] },
+    {
+      label: "Crear",
+      options: [
+        {
+          value: NUEVO_DESTINO,
+          label: "Nuevo atributo personalizado…",
+          description: "_profile.Attributes.<Nombre>",
+          filteringTags: ["nuevo", "crear", "personalizado"]
+        }
+      ]
+    }
+  ];
+}
+
+function filaVacia(): MapeoDetectado {
+  return {
+    rowId: `nuevo-${Date.now()}`,
+    sourceColumn: "",
+    destinationId: null,
+    contentType: "STRING",
+    confidence: "unmapped",
+    required: false,
+    identifier: "NONE",
+    validation: ""
+  };
 }
 
 function obtenerMapeo(esquema: EsquemaDestino) {
@@ -176,17 +221,60 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
           JSON.stringify(datosComparables(item.fila)) !== JSON.stringify(datosComparables(item.anterior!))
       )
     );
-  const impactos = cambios.flatMap(({ fila, anterior }) => impactoEnPerfiles(fila, anterior));
+  const agregados = mapeo.filter((fila) => !baseMapeo.some((base) => base.rowId === fila.rowId));
+  const eliminados = baseMapeo.filter((base) => !mapeo.some((fila) => fila.rowId === base.rowId));
+  const totalCambios = cambios.length + agregados.length + eliminados.length;
+  const impactos = [
+    ...cambios.flatMap(({ fila, anterior }) => impactoEnPerfiles(fila, anterior)),
+    ...agregados
+      .filter((fila) => esDestinoPersonalizado(fila.destinationId))
+      .map(
+        (fila) =>
+          `${fila.sourceColumn}: se creará ${obtenerDestino(fila.destinationId)?.target} en Customer Profiles. Los perfiles existentes no lo tendrán hasta la próxima carga.`
+      ),
+    ...eliminados.map(
+      (fila) =>
+        `${fila.sourceColumn}: deja de cargarse. Los perfiles existentes conservan el valor en ${obtenerDestino(fila.destinationId, fila.contentType)?.label ?? "su destino"}, y el campo sigue en Customer Profiles.`
+    )
+  ];
+  const resumenCambios = [
+    ...agregados.map((fila) => ({ id: fila.rowId, atributo: fila.sourceColumn, cambio: "Agregado" })),
+    ...eliminados.map((fila) => ({ id: fila.rowId, atributo: fila.sourceColumn, cambio: "Eliminado" })),
+    ...cambios.map(({ fila, anterior }) => ({
+      id: fila.rowId,
+      atributo: fila.sourceColumn,
+      cambio: describirCambios(fila, anterior)
+    }))
+  ];
+  const opcionesDestinoBorrador = useMemo(() => construirOpcionesDestino(mapeo), [mapeo]);
+  const [creandoDestino, setCreandoDestino] = useState(false);
+  const [nombreNuevo, setNombreNuevo] = useState("");
+  const errorNombreNuevo =
+    creandoDestino && filaEditada
+      ? validarNombreAtributo(
+          nombreNuevo,
+          mapeo.filter((fila) => fila.rowId !== filaEditada.rowId).map((fila) => fila.destinationId)
+        )
+      : undefined;
+  const esNuevaFila = Boolean(filaEditada && !mapeo.some((fila) => fila.rowId === filaEditada.rowId));
+
+  const abrirFila = (fila: MapeoDetectado) => {
+    setCreandoDestino(false);
+    setNombreNuevo("");
+    setFilaEditada({ ...fila });
+  };
+
+  const eliminarFila = (rowId: string) => setMapeo((actual) => actual.filter((fila) => fila.rowId !== rowId));
 
   useEffect(() => {
-    if (!editando || cambios.length === 0) return;
+    if (!editando || totalCambios === 0) return;
     const prevenirSalida = (evento: BeforeUnloadEvent) => {
       evento.preventDefault();
       evento.returnValue = "";
     };
     window.addEventListener("beforeunload", prevenirSalida);
     return () => window.removeEventListener("beforeunload", prevenirSalida);
-  }, [editando, cambios.length]);
+  }, [editando, totalCambios]);
 
   const cerrarAccion = () => {
     setAccion(null);
@@ -211,15 +299,21 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
 
   const guardarFila = () => {
     if (!filaEditada) return;
-    setMapeo((actual) =>
-      actual.map((fila) => {
-        if (fila.rowId === filaEditada.rowId) return filaEditada;
-        if (filaEditada.identifier === "PROFILE_UNIQUE" && fila.identifier === "PROFILE_UNIQUE") {
-          return { ...fila, identifier: "NONE" };
+    const final: MapeoDetectado = creandoDestino
+      ? { ...filaEditada, destinationId: `${PREFIJO_PERSONALIZADO}${nombreNuevo}` }
+      : filaEditada;
+    setMapeo((actual) => {
+      const ajustado = actual.map((fila) => {
+        if (fila.rowId === final.rowId) return final;
+        if (final.identifier === "PROFILE_UNIQUE" && fila.identifier === "PROFILE_UNIQUE") {
+          return { ...fila, identifier: "NONE" as const };
         }
         return fila;
-      })
-    );
+      });
+      return ajustado.some((fila) => fila.rowId === final.rowId) ? ajustado : [...ajustado, final];
+    });
+    setCreandoDestino(false);
+    setNombreNuevo("");
     setFilaEditada(null);
   };
 
@@ -258,8 +352,12 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
 
   const filaInvalida = filaEditada
     ? !/^[a-zA-Z0-9_.-]{1,64}$/.test(filaEditada.sourceColumn) ||
-      mapeo.some((fila) => fila.rowId !== filaEditada.rowId && fila.sourceColumn === filaEditada.sourceColumn) ||
-      !filaEditada.destinationId
+      mapeo.some(
+        (fila) =>
+          fila.rowId !== filaEditada.rowId &&
+          normalizarCampo(fila.sourceColumn) === normalizarCampo(filaEditada.sourceColumn)
+      ) ||
+      (creandoDestino ? Boolean(errorNombreNuevo) : !filaEditada.destinationId)
     : false;
 
   if (eliminado) {
@@ -337,14 +435,14 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
                   header={
                     errores.length
                       ? "El borrador necesita atención"
-                      : cambios.length
+                      : totalCambios
                         ? "Borrador listo para revisar"
                         : "Borrador sin cambios"
                   }
                 >
                   {errores.length
                     ? errores.join(" ")
-                    : cambios.length
+                    : totalCambios
                       ? "Los cambios no afectarán las cargas hasta que publiques una nueva versión."
                       : "Abre un atributo para editarlo. La versión publicada continuará activa hasta que revises y publiques cambios."}
                 </Alert>
@@ -369,18 +467,19 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
                         <SpaceBetween direction="horizontal" size="xs">
                           <Button
                             variant="primary"
-                            disabled={errores.length > 0 || cambios.length === 0}
+                            disabled={errores.length > 0 || totalCambios === 0}
                             onClick={() => {
                               setAceptaImpacto(false);
                               setRevisando(true);
                             }}
                           >
                             Revisar{" "}
-                            {cambios.length
-                              ? `${cambios.length} ${cambios.length === 1 ? "cambio" : "cambios"}`
-                              : "cambios"}
+                            {totalCambios ? `${totalCambios} ${totalCambios === 1 ? "cambio" : "cambios"}` : "cambios"}
                           </Button>
-                          <Button onClick={() => (cambios.length ? setAccion("discard") : setEditando(false))}>
+                          <Button iconName="add-plus" onClick={() => abrirFila(filaVacia())}>
+                            Agregar atributo
+                          </Button>
+                          <Button onClick={() => (totalCambios ? setAccion("discard") : setEditando(false))}>
                             Descartar borrador
                           </Button>
                         </SpaceBetween>
@@ -421,7 +520,7 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
                     header: "Destino",
                     minWidth: 250,
                     cell: (fila) => {
-                      const destino = obtenerDestino(fila.destinationId);
+                      const destino = obtenerDestino(fila.destinationId, fila.contentType);
                       return destino ? (
                         <SpaceBetween size="xxs">
                           <strong>{destino.label}</strong>
@@ -472,14 +571,29 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
                   {
                     id: "action",
                     header: "Acción",
-                    minWidth: 90,
+                    minWidth: 150,
                     cell: (fila) =>
                       editando ? (
-                        <Button variant="inline-link" onClick={() => setFilaEditada({ ...fila })}>
-                          Editar
-                        </Button>
+                        <SpaceBetween direction="horizontal" size="xs">
+                          <Button variant="inline-link" onClick={() => abrirFila(fila)}>
+                            Editar
+                          </Button>
+                          {fila.identifier === "PROFILE_UNIQUE" ? (
+                            <Box variant="small" color="text-body-secondary">
+                              No se puede eliminar
+                            </Box>
+                          ) : (
+                            <Button
+                              variant="inline-link"
+                              ariaLabel={`Eliminar ${fila.sourceColumn}`}
+                              onClick={() => eliminarFila(fila.rowId)}
+                            >
+                              Eliminar
+                            </Button>
+                          )}
+                        </SpaceBetween>
                       ) : (
-                        <Button variant="inline-link" onClick={() => setFilaEditada({ ...fila })}>
+                        <Button variant="inline-link" onClick={() => abrirFila(fila)}>
                           Ver
                         </Button>
                       )
@@ -532,7 +646,9 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
         size="large"
         header={
           editando
-            ? `Editar ${filaEditada?.sourceColumn ?? "atributo"}`
+            ? esNuevaFila
+              ? "Agregar atributo"
+              : `Editar ${filaEditada?.sourceColumn ?? "atributo"}`
             : `Detalle de ${filaEditada?.sourceColumn ?? "atributo"}`
         }
         footer={
@@ -564,7 +680,8 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
                         ? "Usa un nombre válido de hasta 64 caracteres."
                         : mapeo.some(
                               (fila) =>
-                                fila.rowId !== filaEditada.rowId && fila.sourceColumn === filaEditada.sourceColumn
+                                fila.rowId !== filaEditada.rowId &&
+                                normalizarCampo(fila.sourceColumn) === normalizarCampo(filaEditada.sourceColumn)
                             )
                           ? "Ya existe otra columna con este nombre."
                           : undefined
@@ -578,25 +695,35 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
                   <FormField
                     label="Destino"
                     description="Atributo que recibirá el valor en Customer Profiles"
-                    errorText={!filaEditada.destinationId ? "Selecciona un destino." : undefined}
+                    errorText={!creandoDestino && !filaEditada.destinationId ? "Selecciona un destino." : undefined}
                   >
                     <Select
                       expandToViewport
                       selectedOption={
-                        opcionesDestino
+                        opcionesDestinoBorrador
                           .flatMap((grupo) => grupo.options)
-                          .find((opcion) => opcion.value === filaEditada.destinationId) ?? null
+                          .find(
+                            (opcion) => opcion.value === (creandoDestino ? NUEVO_DESTINO : filaEditada.destinationId)
+                          ) ?? null
                       }
                       onChange={({ detail }) => {
                         const destinationId = detail.selectedOption.value ?? null;
+                        if (destinationId === NUEVO_DESTINO) {
+                          setCreandoDestino(true);
+                          setFilaEditada({ ...filaEditada, destinationId: null, contentType: "STRING" });
+                          return;
+                        }
+                        setCreandoDestino(false);
                         const destino = obtenerDestino(destinationId);
                         setFilaEditada({
                           ...filaEditada,
                           destinationId,
-                          contentType: destino?.contentType ?? filaEditada.contentType
+                          contentType: esDestinoPersonalizado(destinationId)
+                            ? filaEditada.contentType
+                            : (destino?.contentType ?? filaEditada.contentType)
                         });
                       }}
-                      options={opcionesDestino}
+                      options={opcionesDestinoBorrador}
                       filteringType="auto"
                       filteringPlaceholder="Buscar destino"
                       filteringAriaLabel="Buscar atributo de destino"
@@ -605,6 +732,16 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
                       noMatch="No hay destinos coincidentes"
                     />
                   </FormField>
+                  {creandoDestino && (
+                    <FormField
+                      label="Nombre del nuevo atributo"
+                      description={`Se creará _profile.Attributes.${nombreNuevo || "<Nombre>"} al publicar.`}
+                      constraintText="Empieza con mayúscula; solo letras y números. Ejemplo: MontoCuota."
+                      errorText={nombreNuevo ? errorNombreNuevo : undefined}
+                    >
+                      <Input value={nombreNuevo} onChange={({ detail }) => setNombreNuevo(detail.value.trim())} />
+                    </FormField>
+                  )}
                   <FormField
                     label="Tipo de contenido"
                     description="AWS utiliza este tipo para comparar valores durante las búsquedas."
@@ -669,7 +806,10 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
               columns={2}
               items={[
                 { label: "Columna", value: filaEditada.sourceColumn },
-                { label: "Destino", value: obtenerDestino(filaEditada.destinationId)?.label ?? "Sin destino" },
+                {
+                  label: "Destino",
+                  value: obtenerDestino(filaEditada.destinationId, filaEditada.contentType)?.label ?? "Sin destino"
+                },
                 { label: "Tipo", value: `${etiquetasTipo[filaEditada.contentType]} (${filaEditada.contentType})` },
                 { label: "Obligatoria", value: filaEditada.required ? "Sí" : "No" },
                 { label: "Identificador", value: datosIdentificador[filaEditada.identifier].label },
@@ -725,15 +865,11 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
             items={[
               { label: "Versión actual", value: `v${esquema.version}` },
               { label: "Nueva versión", value: `v${esquema.version + 1}` },
-              { label: "Cambios", value: cambios.length.toString() }
+              { label: "Cambios", value: totalCambios.toString() }
             ]}
           />
           <Table
-            items={cambios.map(({ fila, anterior }) => ({
-              id: fila.rowId,
-              atributo: fila.sourceColumn,
-              cambio: describirCambios(fila, anterior)
-            }))}
+            items={resumenCambios}
             trackBy="id"
             variant="embedded"
             wrapLines
@@ -779,7 +915,7 @@ export default function MapeoPerfiles({ esquema, onSave }: Props) {
             {accion === "delete"
               ? "Eliminar el tipo de objeto puede eliminar también sus objetos asociados. Esta acción debe quedar auditada."
               : accion === "discard"
-                ? `Se perderán ${cambios.length} cambios del borrador. La versión publicada continuará activa.`
+                ? `Se perderán ${totalCambios} cambios del borrador. La versión publicada continuará activa.`
                 : "Los cambios se guardarán primero en un borrador y requerirán una revisión antes de publicarse."}
           </Alert>
           {accion !== "discard" && (

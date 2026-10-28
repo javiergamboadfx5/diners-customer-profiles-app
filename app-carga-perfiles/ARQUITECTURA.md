@@ -175,8 +175,8 @@ El `.xls` antiguo (binario) no se admite. Un archivo sin las columnas nuevas (po
 |---|---|---|
 | `AccountNumber` (DNI) | 8 dígitos, único en el archivo | Rechazo |
 | `FirstName` | Obligatorio (almacena el nombre completo del socio) | Rechazo |
-| `MobilePhoneNumber` | `51` + 9 dígitos; se guarda como `+51…` | Rechazo; vacío = advertencia |
-| `PersonalEmailAddress` | Formato de correo; se guarda en minúsculas | Rechazo |
+| `PhoneNumber` | `51` + 9 dígitos; se guarda como `+51…` | Rechazo; vacío = advertencia |
+| `EmailAddress` | Formato de correo; se guarda en minúsculas | Rechazo |
 | `SegmentoValor` | 1, 2 o 3 | Rechazo; vacío = advertencia (grupo general) |
 | `MarcaRetener` | 1 o 2 | Rechazo |
 | `TieneOferta` | S/SI/N/NO → `S`/`N` | Rechazo |
@@ -219,7 +219,7 @@ Se borran solos a los `dias_retencion_archivos` (30 por defecto), porque contien
 - **Object type `DinersSocio`**: 16 campos `_source.<campo>` → `_profile.*` (11 originales + 5 confirmados el 26–27 de octubre). Los nombres deben coincidir entre `reglas.CAMPO_OBJECT_TYPE` (Python) y `local.campos_object_type` (Terraform).
 - **Claves**:
   - `_account` sobre `account_number` (DNI), `PROFILE + UNIQUE`. Identifica un único perfil; búsqueda del agente en WhatsApp. `PutProfileObject` es idempotente por DNI: reintentar un mensaje no duplica perfiles.
-  - `_phone` sobre `mobile_phone` (TELEFONO_1), `PROFILE`. Búsqueda por el número que llama en voz (doc viva, 23 de octubre). Sin `UNIQUE` porque un celular puede repetirse entre socios: una búsqueda por teléfono puede devolver más de un perfil, y el flujo de voz debe pedir el documento en ese caso.
+  - `_phone` sobre `phone_number` (TELEFONO_1), `PROFILE`. Búsqueda por el número que llama en voz (doc viva, 23 de octubre). Sin `UNIQUE` porque un celular puede repetirse entre socios: una búsqueda por teléfono puede devolver más de un perfil, y el flujo de voz debe pedir el documento en ese caso.
 - **Expiración**: `dias_expiracion_perfiles` (1.000 por defecto) en dominio y object type. No se usa `CreateUploadJob`, que limita la expiración a 90 días.
 - **Identity resolution**: desactivada (una sola fuente, DNI único).
 - **Dominio**: se usa el existente de la instancia (`crear_dominio_perfiles = false`) o se crea uno nuevo cifrado con la KMS de la app.

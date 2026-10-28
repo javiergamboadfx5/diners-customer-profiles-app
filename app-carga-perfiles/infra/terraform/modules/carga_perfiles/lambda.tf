@@ -69,9 +69,9 @@ resource "aws_iam_role_policy" "lambda" {
         Resource = aws_sqs_queue.escritura.arn
       },
       {
-        Sid      = "Cifrado"
-        Effect   = "Allow"
-        Action   = ["kms:Decrypt", "kms:GenerateDataKey", "kms:Encrypt"]
+        Sid    = "Cifrado"
+        Effect = "Allow"
+        Action = ["kms:Decrypt", "kms:GenerateDataKey", "kms:Encrypt"]
         # Incluye la KMS de un dominio existente: PutProfileObject cifra con las credenciales del escritor.
         Resource = compact([aws_kms_key.app.arn, var.kms_dominio_perfiles_arn])
       },
@@ -86,6 +86,13 @@ resource "aws_iam_role_policy" "lambda" {
         Effect   = "Allow"
         Action   = ["profile:PutProfileObject"]
         Resource = ["${local.dominio_arn}/object-types/${var.object_type_name}", local.dominio_arn]
+      },
+      {
+        # Publicar el esquema agrega al object type los atributos personalizados creados en la pantalla.
+        Sid      = "CustomerProfilesObjectType"
+        Effect   = "Allow"
+        Action   = ["profile:GetProfileObjectType", "profile:PutProfileObjectType"]
+        Resource = ["${local.dominio_arn}/object-types/${var.object_type_name}"]
       }
     ]
   })
