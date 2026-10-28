@@ -97,6 +97,22 @@ variable "dominio_perfiles" {
   type        = string
 }
 
+variable "plantilla_contactos" {
+  description = "Plantilla de Connect para los registros de contacto: CTR, CTR-NoInferred o CTR-AutoAssociateOnly."
+  type        = string
+  default     = "CTR-AutoAssociateOnly"
+  validation {
+    condition     = contains(["CTR", "CTR-NoInferred", "CTR-AutoAssociateOnly"], var.plantilla_contactos)
+    error_message = "Usa CTR, CTR-NoInferred o CTR-AutoAssociateOnly."
+  }
+}
+
+variable "kms_dominio_perfiles_arn" {
+  description = "ARN de la KMS con que esta cifrado un dominio existente (DefaultEncryptionKey). PutProfileObject la usa con las credenciales del escritor. Vacio si el dominio lo crea este modulo o no esta cifrado con CMK."
+  type        = string
+  default     = ""
+}
+
 variable "dias_expiracion_perfiles" {
   description = "DefaultExpirationDays del dominio y del object type."
   type        = number

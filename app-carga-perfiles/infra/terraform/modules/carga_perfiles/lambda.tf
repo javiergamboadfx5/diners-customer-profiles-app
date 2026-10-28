@@ -72,7 +72,8 @@ resource "aws_iam_role_policy" "lambda" {
         Sid      = "Cifrado"
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:GenerateDataKey", "kms:Encrypt"]
-        Resource = aws_kms_key.app.arn
+        # Incluye la KMS de un dominio existente: PutProfileObject cifra con las credenciales del escritor.
+        Resource = compact([aws_kms_key.app.arn, var.kms_dominio_perfiles_arn])
       },
       {
         Sid      = "Encolador"

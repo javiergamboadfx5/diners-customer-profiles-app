@@ -9,7 +9,13 @@ export const COLUMNAS_SOCIO = [
   "fecha_afiliacion",
   "tipo_producto",
   "correo",
-  "fecha_nacimiento"
+  "fecha_nacimiento",
+  // Campos confirmados 26-27 de octubre
+  "SCORE_OFERTA",
+  "LINEA_CREDITO",
+  "CALLCENTER_COBRANZA",
+  "CENTRAL_COBRANZA",
+  "REFINANCIADO"
 ] as const;
 export type ColumnaSocio = (typeof COLUMNAS_SOCIO)[number];
 export type FilaSocio = Record<ColumnaSocio, string>;
@@ -33,8 +39,25 @@ export const REGLAS_VALIDACION: Record<ColumnaSocio, string> = {
   fecha_afiliacion: "AAAA-MM-DD; no puede ser futura",
   tipo_producto: "Producto permitido por el esquema",
   correo: "Dirección de correo válida",
-  fecha_nacimiento: "AAAA-MM-DD; no puede ser futura. Saludo de cumpleaños"
+  fecha_nacimiento: "AAAA-MM-DD; no puede ser futura. Saludo de cumpleaños",
+  SCORE_OFERTA: "A, B, C, D o E; vacío genera advertencia. Decide canal de llamada de venta",
+  LINEA_CREDITO: "Texto libre (ej. S/ 12.000, US$ 5.000). Constancia de socio (D15)",
+  CALLCENTER_COBRANZA: "GEINCOS, XLCORP o vacío si no aplica. Base D13",
+  CENTRAL_COBRANZA: "Teléfono de la central de cobranza. El agente lo da al socio en N1",
+  REFINANCIADO: "S o N. Cambia la respuesta del flujo N1"
 };
+// Columnas opcionales: una celda vacía no rechaza la fila.
+const COLUMNAS_OPCIONALES: readonly ColumnaSocio[] = [
+  "TELEFONO_1",
+  "SEGMENTO_VALOR",
+  "tea",
+  "fecha_nacimiento",
+  "SCORE_OFERTA",
+  "LINEA_CREDITO",
+  "CALLCENTER_COBRANZA",
+  "CENTRAL_COBRANZA",
+  "REFINANCIADO"
+];
 export interface ReglaMapeo {
   sourceColumn: ColumnaSocio;
   fieldName: string;
@@ -100,7 +123,30 @@ export const REGLAS_MAPEO: readonly ReglaMapeo[] = [
         "STRING",
         "Fecha de afiliación en formato AAAA-MM-DD."
       ],
-      ["tipo_producto", "tipoProducto", "TipoProducto", "STRING", "Producto Diners asociado al socio."]
+      ["tipo_producto", "tipoProducto", "TipoProducto", "STRING", "Producto Diners asociado al socio."],
+      [
+        "SCORE_OFERTA",
+        "scoreOferta",
+        "ScoreOferta",
+        "STRING",
+        "Propensión a aceptar la oferta (A a E). Decide el canal de la llamada de venta."
+      ],
+      ["LINEA_CREDITO", "lineaCredito", "LineaCredito", "STRING", "Línea de crédito para la constancia de socio."],
+      [
+        "CALLCENTER_COBRANZA",
+        "callcenterCobranza",
+        "CallcenterCobranza",
+        "STRING",
+        "Call center de cobranza asignado (GEINCOS o XLCORP)."
+      ],
+      [
+        "CENTRAL_COBRANZA",
+        "centralCobranza",
+        "CentralCobranza",
+        "STRING",
+        "Teléfono de la central de cobranza que el agente le da al socio."
+      ],
+      ["REFINANCIADO", "refinanciado", "Refinanciado", "STRING", "Indica si la deuda del socio está refinanciada."]
     ] as const
   ).map(([sourceColumn, fieldName, attribute, contentType, description]) => ({
     sourceColumn,
@@ -158,7 +204,13 @@ export function mapearFilaAPerfil(fila: FilaSocio): PerfilTransformado {
       TieneOferta: fila.tiene_oferta,
       Tea: fila.tea,
       FechaAfiliacion: fila.fecha_afiliacion,
-      TipoProducto: fila.tipo_producto
+      TipoProducto: fila.tipo_producto,
+      // Opcionales: una celda vacía no se envía para no borrar el valor anterior del perfil.
+      ...(fila.SCORE_OFERTA ? { ScoreOferta: fila.SCORE_OFERTA } : {}),
+      ...(fila.LINEA_CREDITO ? { LineaCredito: fila.LINEA_CREDITO } : {}),
+      ...(fila.CALLCENTER_COBRANZA ? { CallcenterCobranza: fila.CALLCENTER_COBRANZA } : {}),
+      ...(fila.CENTRAL_COBRANZA ? { CentralCobranza: fila.CENTRAL_COBRANZA } : {}),
+      ...(fila.REFINANCIADO ? { Refinanciado: fila.REFINANCIADO } : {})
     }
   };
 }
@@ -173,7 +225,12 @@ export const FILA_EJEMPLO: FilaSocio = {
   fecha_afiliacion: "2019-03-12",
   tipo_producto: "Miles",
   correo: "mf.quispe@example.com",
-  fecha_nacimiento: "1988-07-14"
+  fecha_nacimiento: "1988-07-14",
+  SCORE_OFERTA: "A",
+  LINEA_CREDITO: "S/ 12.000",
+  CALLCENTER_COBRANZA: "",
+  CENTRAL_COBRANZA: "",
+  REFINANCIADO: "N"
 };
 export interface CampoDestino {
   id: string;
@@ -306,7 +363,36 @@ const destinosPersonalizados: CampoDestino[] = [
     "_profile.Attributes.TipoProducto",
     "STRING",
     ["tipo_producto", "producto"]
-  ]
+  ],
+  [
+    "score-oferta",
+    "Attributes.ScoreOferta",
+    "_profile.Attributes.ScoreOferta",
+    "STRING",
+    ["score_oferta", "score"]
+  ],
+  [
+    "linea-credito",
+    "Attributes.LineaCredito",
+    "_profile.Attributes.LineaCredito",
+    "STRING",
+    ["linea_credito", "linea"]
+  ],
+  [
+    "callcenter-cobranza",
+    "Attributes.CallcenterCobranza",
+    "_profile.Attributes.CallcenterCobranza",
+    "STRING",
+    ["callcenter_cobranza", "callcenter"]
+  ],
+  [
+    "central-cobranza",
+    "Attributes.CentralCobranza",
+    "_profile.Attributes.CentralCobranza",
+    "STRING",
+    ["central_cobranza", "central"]
+  ],
+  ["refinanciado", "Attributes.Refinanciado", "_profile.Attributes.Refinanciado", "STRING", ["refinanciado"]]
 ].map(([id, label, target, contentType, aliases]) => ({
   id: id as string,
   label: label as string,
@@ -321,16 +407,16 @@ const destinoPorTarget = new Map(CAMPOS_DESTINO.map((campo) => [campo.target, ca
 export const ESQUEMA_SOCIOS: EsquemaDestino = {
   id: "diners-socios",
   name: "Perfil de socio Diners",
-  version: 3,
+  version: 2,
   description: "Perfil maestro de socios para identificación y personalización de la atención.",
   allowProfileCreation: true,
-  updatedAt: "2026-10-26T15:40:00-05:00",
-  updatedBy: "Mary Carmen Vílchez",
+  updatedAt: "2026-10-28T00:00:00Z",
+  updatedBy: "terraform",
   fields: REGLAS_MAPEO.map((regla) => ({
     sourceColumn: regla.sourceColumn,
     destinationId: destinoPorTarget.get(regla.target)!,
     contentType: regla.contentType,
-    required: !["TELEFONO_1", "SEGMENTO_VALOR", "tea", "fecha_nacimiento"].includes(regla.sourceColumn),
+    required: !COLUMNAS_OPCIONALES.includes(regla.sourceColumn),
     identifier:
       regla.searchKey === "_account"
         ? ("PROFILE_UNIQUE" as const)

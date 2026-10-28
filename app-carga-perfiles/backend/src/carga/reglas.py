@@ -16,20 +16,23 @@ from typing import Iterable
 # Destino -> nombre del campo en el object type de Customer Profiles (_source.<campo>).
 # Debe coincidir con local.campos_object_type en Terraform.
 CAMPO_OBJECT_TYPE = {
-    "account-number": "account_number",
-    "first-name": "first_name",
-    "last-name": "last_name",
-    "phone-number": "phone_number",
-    "mobile-phone": "mobile_phone",
-    "personal-email": "personal_email",
-    "birth-date": "birth_date",
-    "profile-type": "profile_type",
-    "segmento-valor": "segmento_valor",
-    "marca-retener": "marca_retener",
-    "tiene-oferta": "tiene_oferta",
-    "tea": "tea",
-    "fecha-afiliacion": "fecha_afiliacion",
-    "tipo-producto": "tipo_producto",
+    "account-number":      "account_number",
+    "first-name":          "first_name",
+    "mobile-phone":        "mobile_phone",
+    "personal-email":      "personal_email",
+    "birth-date":          "birth_date",
+    "segmento-valor":      "segmento_valor",
+    "marca-retener":       "marca_retener",
+    "tiene-oferta":        "tiene_oferta",
+    "tea":                 "tea",
+    "fecha-afiliacion":    "fecha_afiliacion",
+    "tipo-producto":       "tipo_producto",
+    # Campos confirmados 26-27 de octubre
+    "score-oferta":        "score_oferta",
+    "linea-credito":       "linea_credito",
+    "callcenter-cobranza": "callcenter_cobranza",
+    "central-cobranza":    "central_cobranza",
+    "refinanciado":        "refinanciado",
 }
 
 PRODUCTOS = {"free", "hiraoka", "club", "miles", "special edition", "carte blanche"}
@@ -39,9 +42,9 @@ RE_CORREO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 RE_FECHA = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # Vacios que no son error, sino advertencia (el perfil se escribe sin el dato).
 ADVERTENCIA_SI_VACIO = {
-    "mobile-phone": "Campo vacío: el socio no recibirá llamada de vuelta",
-    "phone-number": "Campo vacío: el socio no recibirá llamada de vuelta",
+    "mobile-phone":   "Campo vacío: el socio no recibirá llamada de vuelta",
     "segmento-valor": "Campo vacío: se enrutará al grupo general",
+    "score-oferta":   "Campo vacío: no se puede determinar el canal de llamada de venta",
 }
 
 MAX_HALLAZGOS_DETALLE = 5000
@@ -127,6 +130,19 @@ def _validar_valor(destino: str, valor: str, fila: dict[str, str]) -> tuple[str 
         if valor.lower() not in PRODUCTOS:
             return ("tipo_producto no permitido", None, valor)
         return (None, None, valor)
+    if destino == "score-oferta":
+        if valor.upper() not in ("A", "B", "C", "D", "E"):
+            return ("score_oferta debe ser A, B, C, D o E", None, valor)
+        return (None, None, valor.upper())
+    if destino == "refinanciado":
+        v = valor.upper()
+        if v in ("S", "SI", "SÍ"):
+            return (None, None, "S")
+        if v in ("N", "NO"):
+            return (None, None, "N")
+        return ("refinanciado debe ser S o N", None, valor)
+    # Campos de texto libre sin validación adicional (linea-credito,
+    # callcenter-cobranza, central-cobranza): se guardan tal cual.
     return (None, None, valor)
 
 

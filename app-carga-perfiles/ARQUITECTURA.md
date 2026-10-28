@@ -174,7 +174,7 @@ El `.xls` antiguo (binario) no se admite. Un archivo sin las columnas nuevas (po
 | Destino | Regla | Si falla |
 |---|---|---|
 | `AccountNumber` (DNI) | 8 dígitos, único en el archivo | Rechazo |
-| `FirstName` | Obligatorio | Rechazo |
+| `FirstName` | Obligatorio (almacena el nombre completo del socio) | Rechazo |
 | `MobilePhoneNumber` | `51` + 9 dígitos; se guarda como `+51…` | Rechazo; vacío = advertencia |
 | `PersonalEmailAddress` | Formato de correo; se guarda en minúsculas | Rechazo |
 | `SegmentoValor` | 1, 2 o 3 | Rechazo; vacío = advertencia (grupo general) |
@@ -184,6 +184,11 @@ El `.xls` antiguo (binario) no se admite. Un archivo sin las columnas nuevas (po
 | `FechaAfiliacion` | `AAAA-MM-DD`, no futura | Rechazo |
 | `TipoProducto` | Free, Hiraoka, Club, Miles, Special Edition, Carte Blanche | Rechazo |
 | `BirthDate` (`fecha_nacimiento`) | `AAAA-MM-DD`, no futura. Opcional; para el saludo de cumpleaños | Rechazo si viene mal; vacío no genera hallazgo |
+| `ScoreOferta` | A, B, C, D o E. Opcional; decide el canal de llamada de venta | Rechazo si viene con valor distinto; vacío = advertencia |
+| `LineaCredito` | Texto libre (ej. `S/ 12.000`, `US$ 5.000`). Opcional; constancia de socio (D15) | Sin validación de formato; vacío no genera hallazgo |
+| `CallcenterCobranza` | Texto libre (GEINCOS, XLCORP o vacío si no aplica). Base D13 | Sin validación de formato; vacío no genera hallazgo |
+| `CentralCobranza` | Texto libre. Teléfono de la central; el agente lo da al socio en N1 | Sin validación de formato; vacío no genera hallazgo |
+| `Refinanciado` | S/SI/N/NO → `S`/`N`. Opcional; cambia la respuesta de N1 | Rechazo si viene con valor distinto; vacío no genera hallazgo |
 
 Columnas obligatorias que faltan en la cabecera rechazan el archivo entero. Una fila con cualquier rechazo no se escribe; las advertencias no bloquean.
 
@@ -211,7 +216,7 @@ Se borran solos a los `dias_retencion_archivos` (30 por defecto), porque contien
 
 ## 5. Customer Profiles
 
-- **Object type `DinersSocio`**: 14 campos `_source.<campo>` → `_profile.*`. Los nombres deben coincidir entre `reglas.CAMPO_OBJECT_TYPE` (Python) y `local.campos_object_type` (Terraform).
+- **Object type `DinersSocio`**: 16 campos `_source.<campo>` → `_profile.*` (11 originales + 5 confirmados el 26–27 de octubre). Los nombres deben coincidir entre `reglas.CAMPO_OBJECT_TYPE` (Python) y `local.campos_object_type` (Terraform).
 - **Claves**:
   - `_account` sobre `account_number` (DNI), `PROFILE + UNIQUE`. Identifica un único perfil; búsqueda del agente en WhatsApp. `PutProfileObject` es idempotente por DNI: reintentar un mensaje no duplica perfiles.
   - `_phone` sobre `mobile_phone` (TELEFONO_1), `PROFILE`. Búsqueda por el número que llama en voz (doc viva, 23 de octubre). Sin `UNIQUE` porque un celular puede repetirse entre socios: una búsqueda por teléfono puede devolver más de un perfil, y el flujo de voz debe pedir el documento en ese caso.
@@ -318,4 +323,6 @@ Desarrollo local: `npm run dev` corre en modo simulado, sin AWS.
 - El identificador elegido en la pantalla de esquema no cambia las claves del object type; esas las define Terraform.
 - En `.xlsx`, la vista previa del mapeo en el navegador usa las columnas esperadas, no las del archivo. La validación real en el backend sí lee la cabecera del Excel.
 - Probar con el Excel real de Servicio al Socio: el lector se verificó con libros generados, no con uno guardado por Excel.
+- **`NOMBRE_SOCIO` almacenado en `FirstName`**: la base de Diners entrega el nombre completo en una sola columna. Se mapea a `_profile.FirstName`; `LastName` queda vacío. Si en una fase posterior la base separa nombre y apellido, hay que agregar `last_name` a `CAMPO_OBJECT_TYPE` / `campos_object_type` en Terraform y recargar la base completa para poblar el campo.
+- **MONTO_OFERTA** (propuesta de DFX5, pendiente de confirmar por Diners): monto preaprobado para comunicar al socio sin asesor. No está en el esquema; se agrega cuando Diners lo confirme.
 - Respuestas del TL que cambian el diseño: semántica de bajas (upsert vs. reemplazo), D13 en el mismo archivo o aparte, carga completa vs. muestra en desarrollo.

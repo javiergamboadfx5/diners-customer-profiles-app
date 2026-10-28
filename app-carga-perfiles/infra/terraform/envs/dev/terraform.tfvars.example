@@ -25,6 +25,9 @@ app = {
   # Dominio que creo Connect al habilitar Customer Profiles (amazon-connect-<alias>), o uno nuevo.
   crear_dominio_perfiles = false
   dominio_perfiles       = "amazon-connect-<alias-instancia>"
+  # Solo con crear_dominio_perfiles = false y dominio cifrado con CMK: su DefaultEncryptionKey
+  # (aws customer-profiles get-domain --domain-name <dominio> --query DefaultEncryptionKey).
+  # kms_dominio_perfiles_arn = "arn:aws:kms:us-east-1:<cuenta>:key/<key-id>"
 
   concurrencia_escritura = 5
 }

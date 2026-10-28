@@ -55,6 +55,8 @@ module "carga_perfiles" {
   habilitar_customer_profiles      = try(var.app.habilitar_customer_profiles, true)
   crear_dominio_perfiles           = try(var.app.crear_dominio_perfiles, false)
   dominio_perfiles                 = var.app.dominio_perfiles
+  kms_dominio_perfiles_arn         = try(var.app.kms_dominio_perfiles_arn, "")
+  plantilla_contactos              = try(var.app.plantilla_contactos, "CTR-AutoAssociateOnly")
   concurrencia_escritura           = try(var.app.concurrencia_escritura, 5)
 }
 
