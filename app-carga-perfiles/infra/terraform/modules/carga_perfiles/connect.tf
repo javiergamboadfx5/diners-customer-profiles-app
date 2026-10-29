@@ -10,7 +10,8 @@ resource "awscc_appintegrations_application" "app" {
   permissions = ["User.Details.View", "User.Configuration.View"]
   application_source_config = {
     external_url_config = {
-      access_url       = "https://${aws_cloudfront_distribution.app.domain_name}"
+      # Con "/" final: el componente Application de la view arma la URL como AccessUrl + Path.
+      access_url       = "https://${aws_cloudfront_distribution.app.domain_name}/"
       approved_origins = ["https://${aws_cloudfront_distribution.app.domain_name}"]
     }
   }
