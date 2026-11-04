@@ -1,0 +1,24 @@
+# Fuente de verdad: dcp-aws-governance-live. El pipeline sincroniza esta copia
+# antes de cada plan y falla si difiere; no se edita en este repo.
+# IDs de cuenta de ejemplo.
+accounts:
+  diners-dev:
+    account_id: "111111111101"
+    name: dinersclub-diners-dev
+    ou: Workloads/Diners/NonProd
+    environment: dev
+  diners-qa:
+    account_id: "111111111102"
+    name: dinersclub-diners-qa
+    ou: Workloads/Diners/NonProd
+    environment: qa
+  diners-stg:
+    account_id: "111111111103"
+    name: dinersclub-diners-stg
+    ou: Workloads/Diners/NonProd
+    environment: stg
+  diners-prod:
+    account_id: "111111111104"
+    name: dinersclub-diners-prod
+    ou: Workloads/Diners/ProdPci
+    environment: prod

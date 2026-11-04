@@ -1,0 +1,6 @@
+# Copiar a dev.s3.tfbackend. Uso: terraform -chdir=terraform/stack init -backend-config=envs/dev.s3.tfbackend
+bucket       = "<bucket-de-estado>"
+key          = "diners/carga-perfiles/dev.tfstate"
+region       = "us-east-1"
+use_lockfile = true
+encrypt      = true

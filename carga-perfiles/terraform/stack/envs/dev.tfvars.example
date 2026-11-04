@@ -1,0 +1,29 @@
+# Copiar a dev.tfvars y completar. No contiene secretos (OIDC con PKCE no usa client secret).
+ambiente = "dev"
+region   = "us-east-1"
+
+# --- Outputs del stack de Connect ---
+connect_instance_alias   = "<alias-instancia>"
+connect_instance_arn     = "arn:aws:connect:us-east-1:<cuenta>:instance/<instance-id>"
+dominio_perfiles         = "amazon-connect-<alias-instancia>"
+kms_dominio_perfiles_arn = "arn:aws:kms:us-east-1:<cuenta>:key/<key-id>"
+
+# --- Identidad ---
+# Pruebas sin Entra ID: true crea un user pool de Cognito y se ignoran oidc_* y grupos_*.
+crear_cognito_pruebas = false
+# Entra ID: app registration tipo SPA; redirect URI = output app.redirect_uri.
+# En el manifest de la API: "accessTokenAcceptedVersion": 2 para que el issuer sea el v2.0.
+oidc_issuer    = "https://login.microsoftonline.com/<tenant-id>/v2.0"
+oidc_client_id = "<client-id-spa>"
+oidc_audiences = ["<client-id-api>"]
+oidc_scope     = "openid profile email api://<client-id-api>/Cargas.Write"
+# Object IDs de grupos de Entra ID (claim "groups").
+grupos_carga = ["<grupo-servicio-al-socio>"]
+grupos_admin = ["<grupo-administradores>"]
+
+# Dentro de Connect, solo estos perfiles de enrutamiento ven la app (nombre, ID o ARN). Vacio = todos.
+perfiles_enrutamiento_permitidos = []
+
+# --- Operacion ---
+concurrencia_escritura = 5
+# sns_alarmas_arn = "arn:aws:sns:us-east-1:<cuenta>:<topico>"

@@ -1,0 +1,16 @@
+# Equipos de GitHub sincronizados desde los grupos Grp_GH_* de L15 (slugs de ejemplo).
+# La rama main exige revisión de CODEOWNERS.
+
+*                                              @Diners/grp-gh-infrastructure
+
+# Cada aplicación aprueba lo suyo en todos los ambientes.
+/live/*/us-east-1/workloads/merchants/         @Diners/grp-gh-app-merchants-leads @Diners/grp-gh-infrastructure
+
+# Producción suma a Release Managers.
+/live/prod/                                    @Diners/grp-gh-release-managers @Diners/grp-gh-infrastructure
+
+# Configuración común, catálogos y políticas.
+/terragrunt.hcl                                @Diners/grp-gh-architecture @Diners/grp-gh-infrastructure
+/catalogs/                                     @Diners/grp-gh-architecture
+/policies/                                     @Diners/grp-gh-security
+/.github/                                      @Diners/grp-gh-platform-admins

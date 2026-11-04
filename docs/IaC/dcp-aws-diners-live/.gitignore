@@ -1,0 +1,12 @@
+.terragrunt-cache/
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
+tfplan.json
+backend.tf
+provider.tf
+crash.log
+# Nunca: tfvars con secretos. Los inputs viven en terragrunt.hcl y no llevan secretos.
+*.auto.tfvars

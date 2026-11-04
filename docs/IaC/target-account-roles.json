@@ -1,0 +1,31 @@
+{
+  "_comentario": "REFERENCIA. Trust policies de los roles de cada cuenta destino (dinersclub-diners-<env>). Los crea gobierno al dar de alta la cuenta (L15). IDs de ejemplo.",
+
+  "TerraformPlanRole": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "SoloRolDePlanDeCICD",
+        "Effect": "Allow",
+        "Principal": { "AWS": "arn:aws:iam::222222222222:role/dcp-platform-shared-cicd-role-terraform-plan" },
+        "Action": ["sts:AssumeRole"],
+        "Condition": { "StringEquals": { "aws:PrincipalOrgID": "o-xxxxxxxxxx" } }
+      }
+    ],
+    "_permisos": "ReadOnlyAccess + lectura de parámetros /dcp/*. Sin escritura. Sirve para plan y detección de drift."
+  },
+
+  "TerraformApplyRole_en_cuenta_prod": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "SoloRolDeApplyProd",
+        "Effect": "Allow",
+        "Principal": { "AWS": "arn:aws:iam::222222222222:role/dcp-platform-shared-cicd-role-terraform-apply-prod" },
+        "Action": ["sts:AssumeRole"],
+        "Condition": { "StringEquals": { "aws:PrincipalOrgID": "o-xxxxxxxxxx" } }
+      }
+    ],
+    "_permisos": "Escritura limitada al alcance del repo; sin AdministratorAccess; todo rol que cree lleva el permission boundary dcp-platform-permission-boundary. En cuentas nonprod el principal es ...-terraform-apply-nonprod."
+  }
+}

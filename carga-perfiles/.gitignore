@@ -1,0 +1,18 @@
+# Terraform
+.terraform/
+.build/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+terraform/stack/envs/*.tfvars
+terraform/stack/envs/*.s3.tfbackend
+!terraform/stack/envs/*.example
+*_override.tf
+
+# App
+app/node_modules/
+app/dist/
+*.tsbuildinfo
+__pycache__/

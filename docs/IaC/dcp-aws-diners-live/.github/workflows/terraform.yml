@@ -1,0 +1,39 @@
+# Pipeline del repo live. No contiene lógica: llama al template de Platform por SHA (L06).
+# El nombre "terraform" importa: el webhook del runner de CodeBuild filtra por WORKFLOW_NAME.
+name: terraform
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "live/**"
+      - "terragrunt.hcl"
+      - "domain.hcl"
+      - "catalogs/**"
+      - "policies/**"
+  push:
+    branches: [main]
+    paths:
+      - "live/**"
+      - "terragrunt.hcl"
+      - "domain.hcl"
+      - "catalogs/**"
+      - "policies/**"
+
+# Sin permisos por defecto; el job los pide explícitamente.
+permissions: {}
+
+# Un solo pipeline por rama a la vez; nunca se cancela uno en curso (podría dejar un lock).
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    uses: Diners/dcp-platform-pipeline-templates/.github/workflows/terraform-stack.yml@0f3a6c1e9b2d4f5a7c8e9d0b1a2c3e4f5a6b7c8d
+    permissions:
+      id-token: write       # token OIDC de GitHub para AWS
+      contents: read
+      pull-requests: write  # comentar el plan especulativo
+    with:
+      domain: diners

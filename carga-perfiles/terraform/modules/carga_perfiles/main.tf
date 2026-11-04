@@ -1,0 +1,207 @@
+data "aws_caller_identity" "actual" {}
+data "aws_region" "actual" {}
+
+locals {
+  prefijo = "${var.nombre}-${var.ambiente}"
+  cuenta  = data.aws_caller_identity.actual.account_id
+  region  = data.aws_region.actual.name
+  backend = abspath(var.directorio_backend)
+  tags    = merge({ Proyecto = "diners-carga-perfiles", Ambiente = var.ambiente, GestionadoPor = "terraform" }, var.tags)
+  # El dominio lo crea el stack de Connect; este modulo solo lo recibe.
+  dominio     = var.dominio_perfiles
+  dominio_arn = "arn:aws:profile:${local.region}:${local.cuenta}:domains/${local.dominio}"
+
+  # Campos del object type. Las claves deben coincidir con CAMPO_OBJECT_TYPE en backend/src/carga/reglas.py.
+  campos_object_type = {
+    # Campos estandar de primer nivel del perfil (los mismos de CreateProfile). Todos se pueden
+    # elegir como destino en la pantalla de esquema; los que no tengan columna simplemente no llegan.
+    account_number         = { target = "_profile.AccountNumber", tipo = "STRING" }
+    first_name             = { target = "_profile.FirstName", tipo = "STRING" }
+    middle_name            = { target = "_profile.MiddleName", tipo = "STRING" }
+    last_name              = { target = "_profile.LastName", tipo = "STRING" }
+    birth_date             = { target = "_profile.BirthDate", tipo = "STRING" }
+    gender_string          = { target = "_profile.GenderString", tipo = "STRING" }
+    party_type_string      = { target = "_profile.PartyTypeString", tipo = "STRING" }
+    business_name          = { target = "_profile.BusinessName", tipo = "STRING" }
+    additional_information = { target = "_profile.AdditionalInformation", tipo = "STRING" }
+    phone_number           = { target = "_profile.PhoneNumber", tipo = "PHONE_NUMBER" }
+    mobile_phone           = { target = "_profile.MobilePhoneNumber", tipo = "PHONE_NUMBER" }
+    home_phone             = { target = "_profile.HomePhoneNumber", tipo = "PHONE_NUMBER" }
+    business_phone         = { target = "_profile.BusinessPhoneNumber", tipo = "PHONE_NUMBER" }
+    email_address          = { target = "_profile.EmailAddress", tipo = "EMAIL_ADDRESS" }
+    personal_email         = { target = "_profile.PersonalEmailAddress", tipo = "EMAIL_ADDRESS" }
+    business_email         = { target = "_profile.BusinessEmailAddress", tipo = "EMAIL_ADDRESS" }
+    # Atributos personalizados
+    monto_oferta     = { target = "_profile.Attributes.MontoOferta", tipo = "NUMBER" }
+    segmento_valor   = { target = "_profile.Attributes.SegmentoValor", tipo = "STRING" }
+    marca_retener    = { target = "_profile.Attributes.MarcaRetener", tipo = "STRING" }
+    tiene_oferta     = { target = "_profile.Attributes.TieneOferta", tipo = "STRING" }
+    tea              = { target = "_profile.Attributes.Tea", tipo = "NUMBER" }
+    fecha_afiliacion = { target = "_profile.Attributes.FechaAfiliacion", tipo = "STRING" }
+    tipo_producto    = { target = "_profile.Attributes.TipoProducto", tipo = "STRING" }
+    # Campos confirmados 26-27 de octubre
+    score_oferta        = { target = "_profile.Attributes.ScoreOferta", tipo = "STRING" }
+    linea_credito       = { target = "_profile.Attributes.LineaCredito", tipo = "STRING" }
+    callcenter_cobranza = { target = "_profile.Attributes.CallcenterCobranza", tipo = "STRING" }
+    central_cobranza    = { target = "_profile.Attributes.CentralCobranza", tipo = "STRING" }
+    refinanciado        = { target = "_profile.Attributes.Refinanciado", tipo = "STRING" }
+  }
+}
+
+# ---------- Cifrado ----------
+
+resource "aws_kms_key" "app" {
+  description             = "${local.prefijo}: archivos de carga, tabla y cola"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+  tags                    = local.tags
+}
+
+resource "aws_kms_alias" "app" {
+  name          = "alias/${local.prefijo}"
+  target_key_id = aws_kms_key.app.key_id
+}
+
+# ---------- Tabla: cargas, lock y esquema ----------
+
+resource "aws_dynamodb_table" "app" {
+  name         = local.prefijo
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+  range_key    = "sk"
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+  attribute {
+    name = "sk"
+    type = "S"
+  }
+  attribute {
+    name = "gsi1pk"
+    type = "S"
+  }
+  attribute {
+    name = "gsi1sk"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "gsi1"
+    hash_key        = "gsi1pk"
+    range_key       = "gsi1sk"
+    projection_type = "ALL"
+  }
+
+  ttl {
+    attribute_name = "expira"
+    enabled        = true
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.app.arn
+  }
+
+  deletion_protection_enabled = var.ambiente == "prod"
+  tags                        = local.tags
+}
+
+# Esquema inicial. Despues lo administra la app (pantalla "Esquema de destino").
+resource "aws_dynamodb_table_item" "esquema_inicial" {
+  table_name = aws_dynamodb_table.app.name
+  hash_key   = aws_dynamodb_table.app.hash_key
+  range_key  = aws_dynamodb_table.app.range_key
+  item = jsonencode({
+    pk      = { S = "ESQUEMA" }
+    sk      = { S = "ACTUAL" }
+    version = { N = "1" }
+    esquema = { S = jsonencode(jsondecode(file("${local.backend}/esquema-inicial.json"))) }
+  })
+  lifecycle {
+    ignore_changes = [item]
+  }
+}
+
+# ---------- Cola de escritura ----------
+
+resource "aws_sqs_queue" "dlq" {
+  name                      = "${local.prefijo}-escritura-dlq"
+  message_retention_seconds = 1209600
+  kms_master_key_id         = aws_kms_key.app.arn
+  tags                      = local.tags
+}
+
+resource "aws_sqs_queue" "escritura" {
+  name                       = "${local.prefijo}-escritura"
+  visibility_timeout_seconds = 720 # 6 x timeout del escritor
+  message_retention_seconds  = 345600
+  kms_master_key_id          = aws_kms_key.app.arn
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.dlq.arn
+    maxReceiveCount     = 8
+  })
+  tags = local.tags
+}
+
+# ---------- Customer Profiles ----------
+# El dominio, su KMS, la plantilla CTR y el vinculo dominio <-> instancia viven en el stack de Connect
+# (ver docs/CONTRATO-STACK-CONNECT.md). Aqui solo va el object type de socios, que es propio de la app.
+
+resource "awscc_customerprofiles_object_type" "socio" {
+  # Cambiar object_type_name o domain_name obliga a reemplazarlo, y eso borra los objetos de todos los socios:
+  # el agente dejaria de reconocerlos hasta la proxima carga. Terraform rechaza el plan en ese caso.
+  # fields: Terraform crea los campos base, pero despues la app agrega los atributos personalizados
+  # (PutProfileObjectType al publicar el esquema). Sin ignore_changes, el proximo apply los borraria.
+  # Para cambiar un campo base: hacerlo en un cambio revisado con -replace o temporalmente sin esta linea,
+  # incluyendo en local.campos_object_type los attr_* que ya existan en AWS.
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [fields]
+  }
+  domain_name            = local.dominio
+  object_type_name       = var.object_type_name
+  description            = "Socio Diners cargado desde la app de carga de perfiles."
+  allow_profile_creation = true
+  expiration_days        = var.dias_expiracion_perfiles
+
+  fields = [
+    for nombre, campo in local.campos_object_type : {
+      name = nombre
+      object_type_field = {
+        source       = "_source.${nombre}"
+        target       = campo.target
+        content_type = campo.tipo
+      }
+    }
+  ]
+
+  keys = [
+    {
+      # DNI: identifica un unico perfil. Busqueda del agente en WhatsApp.
+      name = "_account"
+      object_type_key_list = [
+        {
+          field_names          = ["account_number"]
+          standard_identifiers = ["PROFILE", "UNIQUE"]
+        }
+      ]
+    },
+    {
+      # TELEFONO_1: busqueda por el numero que llama en voz (definido el 23 de octubre).
+      # Sin UNIQUE: un celular puede repetirse entre socios y no debe fusionarlos.
+      name = "_phone"
+      object_type_key_list = [
+        {
+          field_names          = ["phone_number"]
+          standard_identifiers = ["PROFILE"]
+        }
+      ]
+    }
+  ]
+}
