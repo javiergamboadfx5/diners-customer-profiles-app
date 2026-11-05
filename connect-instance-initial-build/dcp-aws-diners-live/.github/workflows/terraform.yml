@@ -1,0 +1,111 @@
+# Pipeline del repo live. No contiene lógica: llama al template de Platform por SHA (L06).
+# El nombre "terraform" importa: el webhook del runner de CodeBuild filtra por WORKFLOW_NAME.
+name: terraform
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "live/**"
+      - "terragrunt.hcl"
+      - "domain.hcl"
+      - "catalogs/**"
+      - "policies/**"
+  push:
+    branches: [main]
+    paths:
+      - "live/**"
+      - "terragrunt.hcl"
+      - "domain.hcl"
+      - "catalogs/**"
+      - "policies/**"
+
+# Sin permisos por defecto; el job los pide explícitamente.
+permissions: {}
+
+# Un solo pipeline por rama a la vez; nunca se cancela uno en curso (podría dejar un lock).
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    uses: Diners/dcp-platform-pipeline-templates/.github/workflows/terraform-stack.yml@0f3a6c1e9b2d4f5a7c8e9d0b1a2c3e4f5a6b7c8d
+    permissions:
+      id-token: write       # token OIDC de GitHub para AWS
+      contents: read
+      pull-requests: write  # comentar el plan especulativo
+    with:
+      domain: diners
+
+  # Checks del lado del repo (connect-instance-initial-build, Req 12.1-12.4, 13.11).
+  # Son de solo lectura y sin red/credenciales: refuerzan iac-core-rules sobre el
+  # arbol de trabajo ANTES del plan del template de Platform. No sustituyen al
+  # template ni alteran su referencia por SHA; corren como job adicional del repo.
+  connect-stack-checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout (live repo)
+        uses: actions/checkout@v4
+
+      # compatibility.yaml vive en dcp-terraform-modules (otro repo). Se obtiene
+      # para que el escaner VERIFIQUE que cada SHA de modulo este registrado y
+      # aprobado (L03), en vez de marcarlo como "no verificable".
+      - name: Checkout dcp-terraform-modules (compatibility.yaml)
+        uses: actions/checkout@v4
+        with:
+          repository: Diners/dcp-terraform-modules
+          ref: main
+          path: .modules-ref
+          ssh-key: ${{ secrets.MODULES_RO_DEPLOY_KEY }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 1) Escaner de archivos de stack: rechaza fuentes de modulo no aprobadas,
+      #    SHAs no registrados, IDs de cuenta, ARNs, CIDRs, literales de entorno,
+      #    terraform_remote_state y workspaces (Req 2.1, 2.2, 2.7, 1.8, 13.2).
+      - name: Scan stack files (scan_stack_files.py)
+        run: >
+          python scripts/ci/scan_stack_files.py
+          --compatibility .modules-ref/compatibility.yaml
+          live
+
+      # 2) Comparador de promocion: los archivos de Stack deben ser byte-identicos
+      #    entre carpetas contactcenter-<env>, ignorando los Hierarchy_Files
+      #    (Req 13.1, 13.5, 13.11). Solo compara cuando existe otra carpeta de
+      #    entorno ademas de dev, para no fallar mientras qa/stg/prod no existan.
+      - name: Compare contactcenter env folders (compare_env_folders.py)
+        shell: bash
+        run: |
+          base=live/contactcenter-dev
+          if [ ! -d "$base" ]; then
+            echo "no hay $base; nada que comparar"
+            exit 0
+          fi
+          status=0
+          for other in live/contactcenter-qa live/contactcenter-stg live/contactcenter-prod; do
+            if [ -d "$other" ]; then
+              echo "comparando $base <-> $other"
+              python scripts/ci/compare_env_folders.py "$base" "$other" || status=1
+            fi
+          done
+          exit $status
+
+      # 3) Guardrail Conftest de Connect. Se evalua sobre el plan JSON de cada
+      #    stack (producido por el template de Platform) con el paquete
+      #    dcp.terraform.connect. Aqui se verifica que la politica compila y es
+      #    valida para que no entre rota al repo (Req 12.1-12.4). La evaluacion
+      #    del plan la ejecuta el template; esta politica es su fuente.
+      - name: Install OPA
+        run: |
+          curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
+          chmod +x opa
+          sudo mv opa /usr/local/bin/opa
+
+      - name: Check Connect guardrail policy (connect_guardrails.rego)
+        run: opa check policies/terraform/conftest

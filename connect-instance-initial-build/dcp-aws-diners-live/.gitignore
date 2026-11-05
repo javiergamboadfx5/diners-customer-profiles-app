@@ -1,0 +1,20 @@
+.terragrunt-cache/
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
+tfplan.json
+# Archivos generados por Terragrunt (root terragrunt.hcl): no se versionan (L03).
+# backend.tf y provider.tf los genera `generate` del root; import.tf lo genera
+# el mecanismo de adopción DD-4 cuando env.hcl define adopt.<stack>.
+backend.tf
+provider.tf
+import.tf
+crash.log
+# Nunca: tfvars con secretos. Los inputs viven en terragrunt.hcl y no llevan secretos.
+*.auto.tfvars
+
+# L03: el lock file SÍ se versiona para cada root module/stack (pin de proveedores
+# desde el mirror Nexus). Se niega explícitamente cualquier regla que lo excluya.
+!.terraform.lock.hcl

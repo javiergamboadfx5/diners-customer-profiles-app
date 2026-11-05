@@ -1,0 +1,21 @@
+# Equipos de GitHub sincronizados desde los grupos Grp_GH_* de L15 (slugs de ejemplo).
+# La rama main exige revisión de CODEOWNERS.
+
+*                                              @Diners/grp-gh-infrastructure
+
+# Cada aplicación aprueba lo suyo en todos los ambientes.
+/live/*/us-east-1/workloads/merchants/         @Diners/grp-gh-app-merchants-leads @Diners/grp-gh-infrastructure
+
+# Entorno de contact center (Amazon Connect). App Leads + Infraestructura
+# aprueban los stacks del dev. Grp_GH_App_[App]_Leads -> slug del equipo de la
+# app propietaria del contact center; Grp_GH_Infrastructure -> grp-gh-infrastructure.
+/live/contactcenter-dev/                        @Diners/grp-gh-app-contactcenter-leads @Diners/grp-gh-infrastructure
+
+# Producción suma a Release Managers.
+/live/prod/                                    @Diners/grp-gh-release-managers @Diners/grp-gh-infrastructure
+
+# Configuración común, catálogos y políticas.
+/terragrunt.hcl                                @Diners/grp-gh-architecture @Diners/grp-gh-infrastructure
+/catalogs/                                     @Diners/grp-gh-architecture
+/policies/                                     @Diners/grp-gh-security
+/.github/                                      @Diners/grp-gh-platform-admins

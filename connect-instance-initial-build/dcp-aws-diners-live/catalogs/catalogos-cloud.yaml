@@ -1,0 +1,30 @@
+# Extracto de catalogos-cloud.yaml (fuente: dcp-aws-governance-live).
+# Única fuente versionada de valores controlados (L11). Copia sincronizada por el pipeline.
+environments: [dev, qa, stg, prod]
+domains: [diners]
+scopes: [diners, data, platform, security, networking]
+regions:
+  us-east-1: use1
+  us-east-2: use2
+  us-west-2: usw2
+  sa-east-1: sae1
+data_classification: [public, internal, confidential, restricted, pci]
+compliance: [general, pci-dss, lpdp]
+managed_by: [terraform, control-tower, aws-managed]
+criticality: [tier-0, tier-1, tier-2, tier-3]
+
+workloads: [platform, payments, billing, collections, customers, cards, acquiring, merchants, fraud, integration, channels]
+
+# Alta de la aplicación simulada (la hace el LT antes del primer PR).
+applications:
+  merchant-portal:
+    workload: merchants
+    owner: equipo-comercios
+    cost_center: "410230"
+    data_classification: confidential
+    compliance: lpdp
+    criticality: tier-2
+
+resource_codes:
+  # ... códigos existentes (vpc, sg, aurora, rds, kms, log, ...) ...
+  ec2: EC2 instance          # NUEVO: se agrega en el mismo PR del módulo compute/ec2-instance

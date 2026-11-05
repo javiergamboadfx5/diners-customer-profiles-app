@@ -1,0 +1,20 @@
+# Relación release SemVer → commit SHA que consumen los repos live (L03).
+# Los SHA de este archivo son de ejemplo.
+modules:
+  data/aurora-postgresql:
+    owner: Grp_GH_Infrastructure
+    releases:
+      - version: v1.3.0
+        sha: 9c2e4f7a1b3d5e6f708192a3b4c5d6e7f8091a2b
+        terraform: ">= 1.15.8, < 1.16.0"
+        aws_provider: ">= 6.47.0, < 7.0.0"
+        status: approved
+
+  compute/ec2-instance:          # NUEVO en este PR
+    owner: Grp_GH_Infrastructure
+    releases:
+      - version: v1.0.0
+        sha: 4e1c9a7d2b8f0e3a5c6d7b9e1f2a3c4d5e6f7a8b   # se completa al crear el tag firmado
+        terraform: ">= 1.15.8, < 1.16.0"
+        aws_provider: ">= 6.47.0, < 7.0.0"
+        status: approved

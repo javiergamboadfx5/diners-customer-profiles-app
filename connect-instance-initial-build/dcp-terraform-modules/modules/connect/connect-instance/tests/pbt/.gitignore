@@ -1,0 +1,5 @@
+# PBT harness local artifacts (do not commit).
+__pycache__/
+.pytest_cache/
+.hypothesis/
+*.pyc
